@@ -1,20 +1,43 @@
 <?php
 /**
- * Enhanced Student Dashboard
+ * Main Dashboard with Role-based Redirection
  * 
- * File: dashboard.php (Student Section)
- * Purpose: Modern student dashboard with enhanced UI/UX
+ * File: dashboard.php
+ * Purpose: Central dashboard that redirects based on user role
  * Author: Student Application Management System
  * Created: 2025
  */
 
 require_once 'config/config.php';
 require_once 'classes/User.php';
-require_once 'classes/Application.php';
-require_once 'classes/Program.php';
 
 // Require authentication
 requireLogin();
+
+$current_user_role = getCurrentUserRole();
+
+// Redirect based on user role
+switch ($current_user_role) {
+    case ROLE_ADMIN:
+    case ROLE_PROGRAM_ADMIN:
+        // Redirect to admin dashboard
+        header('Location: ' . SITE_URL . '/admin/dashboard.php');
+        exit;
+        
+    case ROLE_STUDENT:
+        // Continue to student dashboard (code below)
+        break;
+        
+    default:
+        // Unknown role, logout and redirect to login
+        session_destroy();
+        header('Location: ' . SITE_URL . '/auth/login.php?error=invalid_role');
+        exit;
+}
+
+// Student Dashboard Code (from the existing dashboard.php)
+require_once 'classes/Application.php';
+require_once 'classes/Program.php';
 
 $database = new Database();
 $db = $database->getConnection();
@@ -23,14 +46,7 @@ $user = new User($db);
 $application = new Application($db);
 $program = new Program($db);
 
-$current_user_role = getCurrentUserRole();
 $current_user_id = getCurrentUserId();
-
-// Only show student dashboard for students
-if ($current_user_role !== ROLE_STUDENT) {
-    header('Location: ' . SITE_URL . '/admin/dashboard.php');
-    exit;
-}
 
 $page_title = 'Student Dashboard';
 
@@ -808,6 +824,12 @@ $next_action = getNextAction($student_application);
                                             <small><?php echo $student_application && $student_application['status'] === STATUS_APPROVED ? 'Application approved!' : 'Awaiting final decision'; ?></small>
                                         </div>
                                     </div>
+                                </div>
+                                
+                                <div class="mt-3 text-center">
+                                    <a href="student/timeline.php" class="btn btn-outline-primary btn-sm">
+                                        <i class="fas fa-history me-2"></i>View Detailed Timeline
+                                    </a>
                                 </div>
                             </div>
                         </div>
