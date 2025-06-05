@@ -21,7 +21,7 @@ define('ADMIN_EMAIL', 'admin@swarnandhra.edu');
 define('SUPPORT_PHONE', '+91-9876543210');
 
 // Database Configuration
-define('DB_HOST', 'localhost');
+define('DB_HOST', 'localhost:99');
 define('DB_NAME', 'student_application_db');
 define('DB_USER', 'ramabhadrarao');
 define('DB_PASS', 'nihita1981');
