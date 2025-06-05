@@ -8,8 +8,22 @@
  * Created: 2025
  */
 
-require_once '../config/config.php';
-
+ if (!defined('CONFIG_LOADED')) {
+    // Detect if we're being called from root or subdirectory
+    $config_path = '';
+    if (file_exists('config/config.php')) {
+        $config_path = 'config/config.php';
+    } elseif (file_exists('../config/config.php')) {
+        $config_path = '../config/config.php';
+    } elseif (file_exists('../../config/config.php')) {
+        $config_path = '../../config/config.php';
+    }
+    
+    if ($config_path) {
+        require_once $config_path;
+        define('CONFIG_LOADED', true);
+    }
+}
 class Application {
     private $conn;
     private $table_name = "applications";
