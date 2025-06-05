@@ -1,9 +1,9 @@
 <?php
 /**
- * Student Documents Upload & Management
+ * Student Documents Upload & Management (Fixed)
  * 
  * File: student/documents.php
- * Purpose: Upload and manage required documents with modern UI
+ * Purpose: Upload and manage required documents with working backend
  * Author: Student Application Management System
  * Created: 2025
  */
@@ -25,8 +25,6 @@ $application = new Application($db);
 $program = new Program($db);
 
 $current_user_id = getCurrentUserId();
-$errors = [];
-$success_message = '';
 
 // Get user details and application
 $user_details = $user->getUserById($current_user_id);
@@ -37,50 +35,35 @@ if (!$student_application) {
     exit;
 }
 
-// Get program requirements
-$program_requirements = $program->getCertificateRequirements($student_application['program_id']);
+// Get program requirements with upload status
+$requirements_query = "
+    SELECT 
+        pcr.certificate_type_id,
+        ct.name as certificate_name,
+        ct.description,
+        pcr.is_required,
+        pcr.display_order,
+        ad.id as document_id,
+        ad.document_name as uploaded_filename,
+        ad.is_verified,
+        ad.date_created as upload_date,
+        fu.original_name,
+        fu.file_size,
+        fu.uuid as file_uuid
+    FROM program_certificate_requirements pcr
+    JOIN certificate_types ct ON pcr.certificate_type_id = ct.id
+    LEFT JOIN application_documents ad ON pcr.certificate_type_id = ad.certificate_type_id 
+                                        AND ad.application_id = :application_id
+    LEFT JOIN file_uploads fu ON ad.file_upload_id = fu.uuid
+    WHERE pcr.program_id = :program_id
+    ORDER BY pcr.display_order ASC, ct.name ASC
+";
 
-// Handle file upload
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['upload_document'])) {
-    if (isset($_POST['csrf_token']) && verifyCSRFToken($_POST['csrf_token'])) {
-        $certificate_type_id = sanitizeInput($_POST['certificate_type_id']);
-        
-        if (isset($_FILES['document']) && $_FILES['document']['error'] === UPLOAD_ERR_OK) {
-            $file = $_FILES['document'];
-            
-            // Validate file type
-            $allowed_types = ['pdf', 'jpg', 'jpeg', 'png'];
-            $file_extension = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
-            
-            if (!in_array($file_extension, $allowed_types)) {
-                $errors[] = 'Invalid file type. Only PDF, JPG, JPEG, and PNG files are allowed.';
-            } elseif ($file['size'] > MAX_FILE_SIZE) {
-                $errors[] = 'File size too large. Maximum allowed size is ' . (MAX_FILE_SIZE / 1024 / 1024) . 'MB.';
-            } else {
-                // Create upload directory if it doesn't exist
-                $upload_dir = '../' . UPLOAD_DOCUMENTS_PATH . $current_user_id . '/';
-                if (!is_dir($upload_dir)) {
-                    mkdir($upload_dir, 0755, true);
-                }
-                
-                // Generate unique filename
-                $filename = uniqid() . '_' . time() . '.' . $file_extension;
-                $filepath = $upload_dir . $filename;
-                
-                if (move_uploaded_file($file['tmp_name'], $filepath)) {
-                    // Store file info in database (you'll need to create this functionality)
-                    $success_message = 'Document uploaded successfully!';
-                } else {
-                    $errors[] = 'Failed to upload file. Please try again.';
-                }
-            }
-        } else {
-            $errors[] = 'Please select a file to upload.';
-        }
-    } else {
-        $errors[] = 'Invalid request. Please try again.';
-    }
-}
+$stmt = $db->prepare($requirements_query);
+$stmt->bindParam(':application_id', $student_application['id']);
+$stmt->bindParam(':program_id', $student_application['program_id']);
+$stmt->execute();
+$requirements = $stmt->fetchAll();
 
 $page_title = 'Document Upload';
 $page_subtitle = 'Upload required documents for your application';
@@ -175,6 +158,7 @@ $page_subtitle = 'Upload required documents for your application';
             overflow: hidden;
             transition: all 0.3s ease;
             margin-bottom: 1.5rem;
+            position: relative;
         }
         
         .document-card:hover {
@@ -183,10 +167,21 @@ $page_subtitle = 'Upload required documents for your application';
             border-color: var(--primary-color);
         }
         
+        .document-card.uploaded {
+            border-color: var(--success-color);
+            background: rgba(40, 167, 69, 0.02);
+        }
+        
+        .document-card.verified {
+            border-color: var(--primary-color);
+            background: rgba(0, 84, 166, 0.02);
+        }
+        
         .document-header {
             background: var(--bg-light);
             padding: 1.5rem;
             border-bottom: 1px solid var(--border-color);
+            position: relative;
         }
         
         .document-title {
@@ -212,6 +207,9 @@ $page_subtitle = 'Upload required documents for your application';
             font-weight: 600;
             text-transform: uppercase;
             letter-spacing: 0.5px;
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
         }
         
         .badge-required {
@@ -254,9 +252,10 @@ $page_subtitle = 'Upload required documents for your application';
             background: rgba(0, 84, 166, 0.05);
         }
         
-        .upload-area.has-file {
-            border-color: var(--success-color);
-            background: rgba(40, 167, 69, 0.05);
+        .upload-area.uploading {
+            border-color: var(--info-color);
+            background: rgba(23, 162, 184, 0.05);
+            pointer-events: none;
         }
         
         .upload-icon {
@@ -269,10 +268,6 @@ $page_subtitle = 'Upload required documents for your application';
         .upload-area:hover .upload-icon,
         .upload-area.dragover .upload-icon {
             color: var(--primary-color);
-        }
-        
-        .upload-area.has-file .upload-icon {
-            color: var(--success-color);
         }
         
         .upload-text {
@@ -327,7 +322,7 @@ $page_subtitle = 'Upload required documents for your application';
             margin-bottom: 0.25rem;
         }
         
-        .file-size {
+        .file-meta {
             color: var(--text-light);
             font-size: 0.85rem;
         }
@@ -339,7 +334,7 @@ $page_subtitle = 'Upload required documents for your application';
         
         /* Buttons */
         .btn-modern {
-            padding: 0.75rem 1.5rem;
+            padding: 0.5rem 1rem;
             border: none;
             border-radius: var(--radius-md);
             font-weight: 600;
@@ -349,7 +344,7 @@ $page_subtitle = 'Upload required documents for your application';
             display: inline-flex;
             align-items: center;
             gap: 0.5rem;
-            font-size: 0.9rem;
+            font-size: 0.85rem;
         }
         
         .btn-primary-modern {
@@ -383,6 +378,7 @@ $page_subtitle = 'Upload required documents for your application';
             border-color: var(--primary-color);
             color: var(--primary-color);
             background: rgba(0, 84, 166, 0.05);
+            text-decoration: none;
         }
         
         /* Progress Bar */
@@ -436,6 +432,12 @@ $page_subtitle = 'Upload required documents for your application';
             color: var(--danger-color);
         }
         
+        .alert-info-modern {
+            background: rgba(23, 162, 184, 0.1);
+            border: 1px solid rgba(23, 162, 184, 0.2);
+            color: var(--info-color);
+        }
+        
         /* Requirements Panel */
         .requirements-panel {
             background: var(--white);
@@ -453,72 +455,6 @@ $page_subtitle = 'Upload required documents for your application';
             display: flex;
             align-items: center;
             gap: 0.75rem;
-        }
-        
-        .requirement-item {
-            display: flex;
-            align-items: center;
-            padding: 0.75rem 0;
-            border-bottom: 1px solid var(--border-color);
-        }
-        
-        .requirement-item:last-child {
-            border-bottom: none;
-        }
-        
-        .requirement-icon {
-            width: 24px;
-            height: 24px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin-right: 1rem;
-            font-size: 0.8rem;
-        }
-        
-        .requirement-content {
-            flex: 1;
-        }
-        
-        .requirement-name {
-            font-weight: 600;
-            margin-bottom: 0.25rem;
-        }
-        
-        .requirement-note {
-            color: var(--text-light);
-            font-size: 0.85rem;
-        }
-        
-        /* Responsive Design */
-        @media (max-width: 768px) {
-            .page-header-modern {
-                padding: 1.5rem 0;
-            }
-            
-            .document-card {
-                margin-bottom: 1rem;
-            }
-            
-            .upload-area {
-                padding: 1.5rem;
-            }
-            
-            .upload-icon {
-                font-size: 2rem;
-            }
-            
-            .file-preview {
-                flex-direction: column;
-                align-items: flex-start;
-                gap: 1rem;
-            }
-            
-            .file-actions {
-                width: 100%;
-                justify-content: space-between;
-            }
         }
     </style>
 </head>
@@ -556,27 +492,8 @@ $page_subtitle = 'Upload required documents for your application';
         <!-- Main Content -->
         <div class="page-body">
             <div class="container-xl">
-                <!-- Alert Messages -->
-                <?php if (!empty($errors)): ?>
-                <div class="alert-modern alert-danger-modern">
-                    <i class="fas fa-exclamation-triangle"></i>
-                    <div>
-                        <strong>Please correct the following errors:</strong>
-                        <ul style="margin: 0.5rem 0 0 0; padding-left: 1.25rem;">
-                            <?php foreach ($errors as $error): ?>
-                            <li><?php echo $error; ?></li>
-                            <?php endforeach; ?>
-                        </ul>
-                    </div>
-                </div>
-                <?php endif; ?>
-                
-                <?php if (!empty($success_message)): ?>
-                <div class="alert-modern alert-success-modern">
-                    <i class="fas fa-check-circle"></i>
-                    <span><?php echo $success_message; ?></span>
-                </div>
-                <?php endif; ?>
+                <!-- Global Alert Container -->
+                <div id="alertContainer"></div>
                 
                 <!-- Document Requirements Overview -->
                 <div class="requirements-panel">
@@ -590,48 +507,23 @@ $page_subtitle = 'Upload required documents for your application';
                             <p class="text-muted mb-3">
                                 Please upload all required documents for your application. Ensure that all documents are clear, legible, and in the correct format.
                             </p>
-                            
-                            <div class="requirement-items">
-                                <?php foreach ($program_requirements as $req): ?>
-                                <div class="requirement-item">
-                                    <div class="requirement-icon" style="background: <?php echo $req['is_required'] ? 'var(--danger-color)' : 'var(--text-light)'; ?>; color: white;">
-                                        <i class="fas fa-<?php echo $req['is_required'] ? 'asterisk' : 'circle'; ?>"></i>
-                                    </div>
-                                    <div class="requirement-content">
-                                        <div class="requirement-name"><?php echo htmlspecialchars($req['certificate_name']); ?></div>
-                                        <?php if ($req['description']): ?>
-                                        <div class="requirement-note"><?php echo htmlspecialchars($req['description']); ?></div>
-                                        <?php endif; ?>
-                                    </div>
-                                    <div class="requirement-status">
-                                        <span class="document-badge <?php echo $req['is_required'] ? 'badge-required' : 'badge-optional'; ?>">
-                                            <?php echo $req['is_required'] ? 'Required' : 'Optional'; ?>
-                                        </span>
-                                    </div>
-                                </div>
-                                <?php endforeach; ?>
-                            </div>
                         </div>
                         
                         <div class="col-md-4">
                             <div class="bg-light p-3 rounded">
                                 <h6><i class="fas fa-info-circle text-info me-2"></i>Upload Guidelines</h6>
-                                <ul class="list-unstyled mb-0">
-                                    <li class="mb-2">
+                                <ul class="list-unstyled mb-0 small">
+                                    <li class="mb-1">
                                         <i class="fas fa-check text-success me-2"></i>
                                         Maximum file size: <?php echo (MAX_FILE_SIZE / 1024 / 1024); ?>MB
                                     </li>
-                                    <li class="mb-2">
+                                    <li class="mb-1">
                                         <i class="fas fa-check text-success me-2"></i>
                                         Supported formats: PDF, JPG, PNG
                                     </li>
-                                    <li class="mb-2">
+                                    <li class="mb-1">
                                         <i class="fas fa-check text-success me-2"></i>
                                         Ensure documents are clear and legible
-                                    </li>
-                                    <li class="mb-0">
-                                        <i class="fas fa-check text-success me-2"></i>
-                                        Upload one document at a time
                                     </li>
                                 </ul>
                             </div>
@@ -641,9 +533,10 @@ $page_subtitle = 'Upload required documents for your application';
                 
                 <!-- Document Upload Cards -->
                 <div class="row">
-                    <?php foreach ($program_requirements as $req): ?>
+                    <?php foreach ($requirements as $req): ?>
                     <div class="col-lg-6 col-xl-4">
-                        <div class="document-card">
+                        <div class="document-card <?php echo $req['document_id'] ? ($req['is_verified'] ? 'verified' : 'uploaded') : ''; ?>" 
+                             data-cert-id="<?php echo $req['certificate_type_id']; ?>">
                             <div class="document-header">
                                 <div class="document-title">
                                     <?php echo htmlspecialchars($req['certificate_name']); ?>
@@ -653,23 +546,67 @@ $page_subtitle = 'Upload required documents for your application';
                                     <?php echo htmlspecialchars($req['description']); ?>
                                 </div>
                                 <?php endif; ?>
-                                <div class="document-badges">
-                                    <span class="document-badge <?php echo $req['is_required'] ? 'badge-required' : 'badge-optional'; ?>">
-                                        <i class="fas fa-<?php echo $req['is_required'] ? 'asterisk' : 'circle'; ?>"></i>
-                                        <?php echo $req['is_required'] ? 'Required' : 'Optional'; ?>
-                                    </span>
-                                    <!-- Status badge would go here based on upload status -->
+                                
+                                <div class="document-badge <?php 
+                                    if ($req['document_id']) {
+                                        echo $req['is_verified'] ? 'badge-verified' : 'badge-uploaded';
+                                    } else {
+                                        echo $req['is_required'] ? 'badge-required' : 'badge-optional';
+                                    }
+                                ?>">
+                                    <i class="fas fa-<?php 
+                                        if ($req['document_id']) {
+                                            echo $req['is_verified'] ? 'check-circle' : 'clock';
+                                        } else {
+                                            echo $req['is_required'] ? 'asterisk' : 'circle';
+                                        }
+                                    ?>"></i>
+                                    <?php 
+                                        if ($req['document_id']) {
+                                            echo $req['is_verified'] ? 'Verified' : 'Uploaded';
+                                        } else {
+                                            echo $req['is_required'] ? 'Required' : 'Optional';
+                                        }
+                                    ?>
                                 </div>
                             </div>
                             
                             <div class="document-body">
-                                <form method="POST" enctype="multipart/form-data" class="upload-form">
-                                    <input type="hidden" name="csrf_token" value="<?php echo generateCSRFToken(); ?>">
-                                    <input type="hidden" name="certificate_type_id" value="<?php echo $req['certificate_type_id']; ?>">
-                                    
-                                    <div class="upload-area" onclick="triggerFileInput(this)">
+                                <?php if ($req['document_id']): ?>
+                                <!-- Existing document display -->
+                                <div class="file-preview">
+                                    <div class="file-icon" style="background: <?php echo $req['is_verified'] ? 'var(--primary-color)' : 'var(--success-color)'; ?>;">
+                                        <i class="fas fa-<?php 
+                                            $extension = $req['original_name'] ? strtolower(pathinfo($req['original_name'], PATHINFO_EXTENSION)) : 'file';
+                                            echo ($extension === 'pdf') ? 'file-pdf' : 'file-image';
+                                        ?>"></i>
+                                    </div>
+                                    <div class="file-info">
+                                        <div class="file-name"><?php echo htmlspecialchars($req['original_name'] ?: $req['uploaded_filename']); ?></div>
+                                        <div class="file-meta">
+                                            <?php if ($req['file_size']): ?>
+                                            <?php echo number_format($req['file_size'] / 1024, 1); ?> KB • 
+                                            <?php endif; ?>
+                                            Uploaded on <?php echo formatDateTime($req['upload_date']); ?>
+                                        </div>
+                                    </div>
+                                    <div class="file-actions">
+                                        <button type="button" class="btn-modern btn-outline-modern" onclick="viewDocument('<?php echo $req['file_uuid']; ?>')">
+                                            <i class="fas fa-eye"></i>
+                                        </button>
+                                        <button type="button" class="btn-modern btn-outline-modern" onclick="downloadDocument('<?php echo $req['file_uuid']; ?>')">
+                                            <i class="fas fa-download"></i>
+                                        </button>
+                                        <button type="button" class="btn-modern btn-danger-modern" onclick="replaceDocument(<?php echo $req['certificate_type_id']; ?>)">
+                                            <i class="fas fa-redo"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                                <?php else: ?>
+                                <!-- Upload form -->
+                                <div class="upload-form">
+                                    <div class="upload-area" onclick="triggerFileInput(this)" data-cert-id="<?php echo $req['certificate_type_id']; ?>">
                                         <input type="file" 
-                                               name="document" 
                                                class="file-input" 
                                                accept=".pdf,.jpg,.jpeg,.png"
                                                onchange="handleFileSelect(this)">
@@ -682,59 +619,14 @@ $page_subtitle = 'Upload required documents for your application';
                                         </div>
                                     </div>
                                     
-                                    <div class="file-preview" style="display: none;">
-                                        <div class="file-icon">
-                                            <i class="fas fa-file"></i>
-                                        </div>
-                                        <div class="file-info">
-                                            <div class="file-name"></div>
-                                            <div class="file-size"></div>
-                                        </div>
-                                        <div class="file-actions">
-                                            <button type="button" class="btn-modern btn-outline-modern btn-sm" onclick="removeFile(this)">
-                                                <i class="fas fa-times"></i>
-                                            </button>
-                                        </div>
-                                    </div>
-                                    
                                     <div class="upload-progress">
                                         <div class="progress-bar-modern">
                                             <div class="progress-fill"></div>
                                         </div>
                                         <div class="progress-text">Uploading...</div>
                                     </div>
-                                    
-                                    <div class="upload-actions mt-3" style="display: none;">
-                                        <button type="submit" name="upload_document" class="btn-modern btn-primary-modern w-100">
-                                            <i class="fas fa-upload"></i>
-                                            Upload Document
-                                        </button>
-                                    </div>
-                                </form>
-                                
-                                <!-- Existing document display (if uploaded) -->
-                                <div class="existing-document" style="display: none;">
-                                    <div class="file-preview">
-                                        <div class="file-icon" style="background: var(--success-color);">
-                                            <i class="fas fa-check"></i>
-                                        </div>
-                                        <div class="file-info">
-                                            <div class="file-name">Document Uploaded</div>
-                                            <div class="file-size">Uploaded on: March 15, 2025</div>
-                                        </div>
-                                        <div class="file-actions">
-                                            <button type="button" class="btn-modern btn-outline-modern btn-sm">
-                                                <i class="fas fa-eye"></i>
-                                            </button>
-                                            <button type="button" class="btn-modern btn-outline-modern btn-sm">
-                                                <i class="fas fa-download"></i>
-                                            </button>
-                                            <button type="button" class="btn-modern btn-danger-modern btn-sm">
-                                                <i class="fas fa-trash"></i>
-                                            </button>
-                                        </div>
-                                    </div>
                                 </div>
+                                <?php endif; ?>
                             </div>
                         </div>
                     </div>
@@ -754,9 +646,9 @@ $page_subtitle = 'Upload required documents for your application';
                                 <small class="text-muted">All required documents must be uploaded before submission</small>
                             </div>
                             
-                            <a href="<?php echo SITE_URL; ?>/student/status.php" class="btn-modern btn-success-modern">
-                                <i class="fas fa-arrow-right"></i>
-                                Continue to Status
+                            <a href="<?php echo SITE_URL; ?>/student/document-verify.php" class="btn-modern btn-primary-modern">
+                                <i class="fas fa-check-circle"></i>
+                                Check Verification Status
                             </a>
                         </div>
                     </div>
@@ -781,8 +673,7 @@ $page_subtitle = 'Upload required documents for your application';
             if (!file) return;
             
             const uploadArea = input.closest('.upload-area');
-            const filePreview = uploadArea.nextElementSibling;
-            const uploadActions = uploadArea.parentElement.querySelector('.upload-actions');
+            const certificateId = uploadArea.getAttribute('data-cert-id');
             
             // Validate file
             if (!validateFile(file)) {
@@ -790,55 +681,74 @@ $page_subtitle = 'Upload required documents for your application';
                 return;
             }
             
-            // Update UI
-            uploadArea.classList.add('has-file');
-            uploadArea.querySelector('.upload-text').textContent = 'File selected';
-            uploadArea.querySelector('.upload-subtext').textContent = 'Click to change file';
-            
-            // Show file preview
-            const fileName = filePreview.querySelector('.file-name');
-            const fileSize = filePreview.querySelector('.file-size');
-            
-            fileName.textContent = file.name;
-            fileSize.textContent = formatFileSize(file.size);
-            
-            filePreview.style.display = 'flex';
-            uploadActions.style.display = 'block';
-            
-            // Update file icon based on type
-            const fileIcon = filePreview.querySelector('.file-icon i');
-            const extension = file.name.split('.').pop().toLowerCase();
-            
-            switch (extension) {
-                case 'pdf':
-                    fileIcon.className = 'fas fa-file-pdf';
-                    break;
-                case 'jpg':
-                case 'jpeg':
-                case 'png':
-                    fileIcon.className = 'fas fa-file-image';
-                    break;
-                default:
-                    fileIcon.className = 'fas fa-file';
-            }
+            // Upload file
+            uploadDocument(file, certificateId, uploadArea);
         }
         
-        function removeFile(button) {
-            const form = button.closest('form');
-            const fileInput = form.querySelector('.file-input');
-            const uploadArea = form.querySelector('.upload-area');
-            const filePreview = form.querySelector('.file-preview');
-            const uploadActions = form.querySelector('.upload-actions');
+        function uploadDocument(file, certificateId, uploadArea) {
+            const formData = new FormData();
+            formData.append('document', file);
+            formData.append('certificate_type_id', certificateId);
+            formData.append('csrf_token', '<?php echo generateCSRFToken(); ?>');
             
-            // Reset form
+            const progressDiv = uploadArea.parentElement.querySelector('.upload-progress');
+            const progressFill = progressDiv.querySelector('.progress-fill');
+            const progressText = progressDiv.querySelector('.progress-text');
+            
+            // Show progress
+            uploadArea.classList.add('uploading');
+            progressDiv.style.display = 'block';
+            
+            // Create XMLHttpRequest for progress tracking
+            const xhr = new XMLHttpRequest();
+            
+            xhr.upload.addEventListener('progress', function(e) {
+                if (e.lengthComputable) {
+                    const progress = (e.loaded / e.total) * 100;
+                    progressFill.style.width = progress + '%';
+                    progressText.textContent = `Uploading... ${Math.round(progress)}%`;
+                }
+            });
+            
+            xhr.addEventListener('load', function() {
+                if (xhr.status === 200) {
+                    try {
+                        const response = JSON.parse(xhr.responseText);
+                        if (response.success) {
+                            showAlert('Document uploaded successfully!', 'success');
+                            
+                            // Reload the page to update the UI
+                            setTimeout(() => {
+                                location.reload();
+                            }, 1500);
+                        } else {
+                            showAlert(response.message, 'danger');
+                            resetUploadArea(uploadArea, progressDiv);
+                        }
+                    } catch (e) {
+                        showAlert('Error processing upload response', 'danger');
+                        resetUploadArea(uploadArea, progressDiv);
+                    }
+                } else {
+                    showAlert('Upload failed. Please try again.', 'danger');
+                    resetUploadArea(uploadArea, progressDiv);
+                }
+            });
+            
+            xhr.addEventListener('error', function() {
+                showAlert('Upload failed. Please check your internet connection.', 'danger');
+                resetUploadArea(uploadArea, progressDiv);
+            });
+            
+            xhr.open('POST', '<?php echo SITE_URL; ?>/ajax/upload-document.php');
+            xhr.send(formData);
+        }
+        
+        function resetUploadArea(uploadArea, progressDiv) {
+            uploadArea.classList.remove('uploading');
+            progressDiv.style.display = 'none';
+            const fileInput = uploadArea.querySelector('.file-input');
             fileInput.value = '';
-            uploadArea.classList.remove('has-file');
-            uploadArea.querySelector('.upload-text').textContent = 'Click to upload or drag & drop';
-            uploadArea.querySelector('.upload-subtext').textContent = 'PDF, JPG, PNG up to <?php echo (MAX_FILE_SIZE / 1024 / 1024); ?>MB';
-            
-            // Hide elements
-            filePreview.style.display = 'none';
-            uploadActions.style.display = 'none';
         }
         
         function validateFile(file) {
@@ -859,27 +769,20 @@ $page_subtitle = 'Upload required documents for your application';
             return true;
         }
         
-        function formatFileSize(bytes) {
-            if (bytes === 0) return '0 Bytes';
-            const k = 1024;
-            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-            const i = Math.floor(Math.log(bytes) / Math.log(k));
-            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-        }
-        
         function showAlert(message, type) {
+            const alertContainer = document.getElementById('alertContainer');
             const alertHtml = `
-                <div class="alert-modern alert-${type}-modern" style="position: fixed; top: 20px; right: 20px; z-index: 9999; max-width: 400px;">
+                <div class="alert-modern alert-${type}-modern" style="animation: slideDown 0.3s ease;">
                     <i class="fas fa-${type === 'success' ? 'check-circle' : 'exclamation-triangle'}"></i>
                     <span>${message}</span>
                 </div>
             `;
             
-            document.body.insertAdjacentHTML('beforeend', alertHtml);
+            alertContainer.innerHTML = alertHtml;
             
             // Auto remove after 5 seconds
             setTimeout(() => {
-                const alert = document.querySelector('.alert-modern[style*="position: fixed"]');
+                const alert = alertContainer.querySelector('.alert-modern');
                 if (alert) {
                     alert.style.opacity = '0';
                     setTimeout(() => alert.remove(), 300);
@@ -887,42 +790,31 @@ $page_subtitle = 'Upload required documents for your application';
             }, 5000);
         }
         
-        // Handle form submission with progress
-        document.querySelectorAll('.upload-form').forEach(form => {
-            form.addEventListener('submit', function(e) {
-                e.preventDefault();
-                
-                const formData = new FormData(this);
-                const progressDiv = this.querySelector('.upload-progress');
-                const progressFill = this.querySelector('.progress-fill');
-                const progressText = this.querySelector('.progress-text');
-                const submitBtn = this.querySelector('button[type="submit"]');
-                
-                // Show progress
-                progressDiv.style.display = 'block';
-                submitBtn.disabled = true;
-                
-                // Simulate upload progress (replace with actual XMLHttpRequest)
-                let progress = 0;
-                const interval = setInterval(() => {
-                    progress += Math.random() * 15;
-                    if (progress > 100) progress = 100;
-                    
-                    progressFill.style.width = progress + '%';
-                    progressText.textContent = `Uploading... ${Math.round(progress)}%`;
-                    
-                    if (progress >= 100) {
-                        clearInterval(interval);
-                        progressText.textContent = 'Upload complete!';
-                        
-                        setTimeout(() => {
-                            // Submit the form normally or via AJAX
-                            this.submit();
-                        }, 500);
+        function viewDocument(fileUuid) {
+            window.open('<?php echo SITE_URL; ?>/view-document.php?file=' + encodeURIComponent(fileUuid), '_blank');
+        }
+        
+        function downloadDocument(fileUuid) {
+            window.location.href = '<?php echo SITE_URL; ?>/download-document.php?file=' + encodeURIComponent(fileUuid);
+        }
+        
+        function replaceDocument(certificateId) {
+            if (confirm('Are you sure you want to replace this document? The current document will be removed.')) {
+                // Create a hidden file input
+                const input = document.createElement('input');
+                input.type = 'file';
+                input.accept = '.pdf,.jpg,.jpeg,.png';
+                input.onchange = function() {
+                    const file = this.files[0];
+                    if (file && validateFile(file)) {
+                        // Find the upload area for this certificate
+                        const documentCard = document.querySelector(`[data-cert-id="${certificateId}"]`);
+                        uploadDocument(file, certificateId, documentCard);
                     }
-                }, 100);
-            });
-        });
+                };
+                input.click();
+            }
+        }
         
         // Drag and drop functionality
         document.querySelectorAll('.upload-area').forEach(area => {
@@ -948,21 +840,26 @@ $page_subtitle = 'Upload required documents for your application';
         
         function handleDrop(e) {
             const files = e.dataTransfer.files;
-            const fileInput = e.target.closest('.upload-area').querySelector('.file-input');
+            const uploadArea = e.target.closest('.upload-area');
+            const certificateId = uploadArea.getAttribute('data-cert-id');
             
             if (files.length > 0) {
-                fileInput.files = files;
-                handleFileSelect(fileInput);
+                const file = files[0];
+                if (validateFile(file)) {
+                    uploadDocument(file, certificateId, uploadArea);
+                }
             }
         }
         
-        // Auto-hide alerts
-        setTimeout(() => {
-            document.querySelectorAll('.alert-modern').forEach(alert => {
-                alert.style.opacity = '0';
-                setTimeout(() => alert.remove(), 300);
-            });
-        }, 5000);
+        // Add CSS animation keyframes
+        const style = document.createElement('style');
+        style.textContent = `
+            @keyframes slideDown {
+                from { opacity: 0; transform: translateY(-10px); }
+                to { opacity: 1; transform: translateY(0); }
+            }
+        `;
+        document.head.appendChild(style);
     </script>
 </body>
 </html>
