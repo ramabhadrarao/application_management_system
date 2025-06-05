@@ -67,10 +67,90 @@ $recent_applications_query = "
     LIMIT 10
 ";
 
+$stmt = $db->prepare($recent_applications_query);
+$stmt->bindParam(':program_id', $program_id);
+$stmt->bindValue(':academic_year', '2025-26'); // Current academic year
+$stmt->execute();
+$recent_applications = $stmt->fetchAll();
+
+// Get monthly application trends for this program
+$monthly_trends_query = "
+    SELECT 
+        DATE_FORMAT(date_created, '%Y-%m') as month,
+        COUNT(*) as application_count,
+        COUNT(CASE WHEN status = 'approved' THEN 1 END) as approved_count
+    FROM applications 
+    WHERE program_id = :program_id 
+    AND date_created >= DATE_SUB(CURDATE(), INTERVAL 12 MONTH)
+    GROUP BY DATE_FORMAT(date_created, '%Y-%m')
+    ORDER BY month ASC
+";
+
 $stmt = $db->prepare($monthly_trends_query);
 $stmt->bindParam(':program_id', $program_id);
 $stmt->execute();
 $monthly_trends = $stmt->fetchAll();
+
+// Get application status distribution
+$status_distribution_query = "
+    SELECT 
+        status,
+        COUNT(*) as count
+    FROM applications 
+    WHERE program_id = :program_id 
+    AND academic_year = :academic_year
+    GROUP BY status
+";
+
+$stmt = $db->prepare($status_distribution_query);
+$stmt->bindParam(':program_id', $program_id);
+$stmt->bindValue(':academic_year', '2025-26');
+$stmt->execute();
+$status_distribution = $stmt->fetchAll();
+
+// Get top performing students (approved applications with highest scores)
+$top_students_query = "
+    SELECT a.*, u.email as student_email,
+           AVG(ar.overall_score) as avg_score
+    FROM applications a
+    LEFT JOIN users u ON a.user_id = u.id
+    LEFT JOIN application_reviews ar ON a.id = ar.application_id
+    WHERE a.program_id = :program_id 
+    AND a.status = 'approved'
+    AND a.academic_year = :academic_year
+    GROUP BY a.id
+    HAVING avg_score IS NOT NULL
+    ORDER BY avg_score DESC
+    LIMIT 5
+";
+
+$stmt = $db->prepare($top_students_query);
+$stmt->bindParam(':program_id', $program_id);
+$stmt->bindValue(':academic_year', '2025-26');
+$stmt->execute();
+$top_students = $stmt->fetchAll();
+
+// Get document verification statistics
+$doc_verification_query = "
+    SELECT 
+        ct.name as certificate_name,
+        COUNT(ad.id) as total_submissions,
+        COUNT(CASE WHEN ad.is_verified = 1 THEN 1 END) as verified_submissions,
+        COUNT(CASE WHEN ad.is_verified = 0 THEN 1 END) as pending_submissions
+    FROM certificate_types ct
+    LEFT JOIN program_certificate_requirements pcr ON ct.id = pcr.certificate_type_id
+    LEFT JOIN application_documents ad ON ct.id = ad.certificate_type_id
+    LEFT JOIN applications a ON ad.application_id = a.id
+    WHERE pcr.program_id = :program_id
+    AND (a.program_id = :program_id OR a.program_id IS NULL)
+    GROUP BY ct.id, ct.name
+    ORDER BY pcr.display_order ASC
+";
+
+$stmt = $db->prepare($doc_verification_query);
+$stmt->bindParam(':program_id', $program_id);
+$stmt->execute();
+$doc_verification_stats = $stmt->fetchAll();
 
 $page_title = 'Program Details: ' . $program_details['program_name'];
 ?>
@@ -285,6 +365,69 @@ $page_title = 'Program Details: ' . $program_details['program_name'];
             font-weight: 600;
             font-size: 0.8rem;
         }
+        
+        .verification-stats {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+        }
+        
+        .verification-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.5rem 0;
+        }
+        
+        .verification-progress {
+            width: 200px;
+            height: 8px;
+            background: #e9ecef;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        
+        .verification-progress-fill {
+            height: 100%;
+            background: linear-gradient(135deg, var(--success-color), #20c997);
+            transition: width 0.3s ease;
+        }
+        
+        .quick-actions {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+        
+        .quick-action-btn {
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            text-decoration: none;
+            transition: all 0.3s ease;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 2rem;
+            color: #6c757d;
+        }
+        
+        .student-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.75rem;
+            background: #f8f9fa;
+            border-radius: 8px;
+            margin-bottom: 0.5rem;
+        }
+        
+        .student-score {
+            font-weight: 600;
+            color: var(--success-color);
+        }
     </style>
 </head>
 <body>
@@ -310,8 +453,8 @@ $page_title = 'Program Details: ' . $program_details['program_name'];
                                 <i class="fas fa-file-alt me-2"></i>Requirements
                             </a>
                             <?php endif; ?>
-                            <a href="statistics.php?id=<?php echo $program_id; ?>" class="btn btn-success">
-                                <i class="fas fa-chart-bar me-2"></i>Statistics
+                            <a href="../applications/list.php?program_id=<?php echo $program_id; ?>" class="btn btn-success">
+                                <i class="fas fa-list me-2"></i>View Applications
                             </a>
                             <a href="list.php" class="btn btn-light">
                                 <i class="fas fa-list me-2"></i>Back to Programs
@@ -334,11 +477,25 @@ $page_title = 'Program Details: ' . $program_details['program_name'];
                                     <?php echo $program_details['is_active'] ? 'Active' : 'Inactive'; ?>
                                 </span>
                             </div>
-                            <div class="d-flex gap-3 text-muted">
+                            <div class="d-flex gap-3 text-muted mb-2">
                                 <span><i class="fas fa-code me-1"></i> <?php echo htmlspecialchars($program_details['program_code']); ?></span>
                                 <span><i class="fas fa-building me-1"></i> <?php echo htmlspecialchars($program_details['department']); ?></span>
                                 <span><i class="fas fa-clock me-1"></i> <?php echo $program_details['duration_years']; ?> Years</span>
                                 <span><i class="fas fa-users me-1"></i> <?php echo $program_details['total_seats']; ?> Seats</span>
+                            </div>
+                            <div class="quick-actions">
+                                <a href="../applications/list.php?program_id=<?php echo $program_id; ?>&status=submitted" 
+                                   class="quick-action-btn btn btn-outline-primary">
+                                    <i class="fas fa-clock me-1"></i>Pending Reviews
+                                </a>
+                                <a href="../applications/list.php?program_id=<?php echo $program_id; ?>&status=approved" 
+                                   class="quick-action-btn btn btn-outline-success">
+                                    <i class="fas fa-check me-1"></i>Approved
+                                </a>
+                                <a href="../reports/program.php?id=<?php echo $program_id; ?>" 
+                                   class="quick-action-btn btn btn-outline-info">
+                                    <i class="fas fa-chart-bar me-1"></i>Reports
+                                </a>
                             </div>
                         </div>
                         <div class="col-md-4 text-end">
@@ -539,8 +696,8 @@ $page_title = 'Program Details: ' . $program_details['program_name'];
                     </div>
                 </div>
                 
-                <!-- Certificate Requirements and Recent Applications -->
-                <div class="row g-4">
+                <!-- Certificate Requirements and Document Verification -->
+                <div class="row g-4 mb-4">
                     <!-- Certificate Requirements -->
                     <div class="col-md-6">
                         <div class="info-card">
@@ -551,8 +708,8 @@ $page_title = 'Program Details: ' . $program_details['program_name'];
                             </h5>
                             
                             <?php if (empty($certificate_requirements)): ?>
-                            <div class="text-center py-3">
-                                <i class="fas fa-file-alt fa-2x text-muted mb-2"></i>
+                            <div class="empty-state">
+                                <i class="fas fa-file-alt fa-2x mb-2"></i>
                                 <p class="text-muted mb-0">No certificate requirements configured</p>
                                 <?php if ($current_user_role === ROLE_ADMIN || $program->isProgramAdmin($current_user_id, $program_id)): ?>
                                 <a href="requirements.php?id=<?php echo $program_id; ?>" class="btn btn-sm btn-outline-primary mt-2">
@@ -588,6 +745,49 @@ $page_title = 'Program Details: ' . $program_details['program_name'];
                         </div>
                     </div>
                     
+                    <!-- Document Verification Statistics -->
+                    <div class="col-md-6">
+                        <div class="info-card">
+                            <h5 class="card-title">
+                                <i class="fas fa-check-circle"></i>
+                                Document Verification
+                            </h5>
+                            
+                            <?php if (empty($doc_verification_stats)): ?>
+                            <div class="empty-state">
+                                <i class="fas fa-file-check fa-2x mb-2"></i>
+                                <p class="text-muted mb-0">No document submissions yet</p>
+                            </div>
+                            <?php else: ?>
+                            <?php foreach ($doc_verification_stats as $doc_stat): ?>
+                            <div class="verification-stats">
+                                <div class="verification-item">
+                                    <div>
+                                        <div class="fw-bold"><?php echo htmlspecialchars($doc_stat['certificate_name']); ?></div>
+                                        <div class="text-muted small">
+                                            <?php echo $doc_stat['verified_submissions']; ?> verified / <?php echo $doc_stat['total_submissions']; ?> total
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <?php 
+                                        $verification_percentage = $doc_stat['total_submissions'] > 0 ? 
+                                            round(($doc_stat['verified_submissions'] / $doc_stat['total_submissions']) * 100, 1) : 0;
+                                        ?>
+                                        <div class="verification-progress">
+                                            <div class="verification-progress-fill" style="width: <?php echo $verification_percentage; ?>%"></div>
+                                        </div>
+                                        <div class="text-muted small"><?php echo $verification_percentage; ?>%</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <?php endforeach; ?>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Recent Applications and Top Students -->
+                <div class="row g-4 mb-4">
                     <!-- Recent Applications -->
                     <div class="col-md-6">
                         <div class="info-card">
@@ -598,12 +798,12 @@ $page_title = 'Program Details: ' . $program_details['program_name'];
                             </h5>
                             
                             <?php if (empty($recent_applications)): ?>
-                            <div class="text-center py-3">
-                                <i class="fas fa-inbox fa-2x text-muted mb-2"></i>
+                            <div class="empty-state">
+                                <i class="fas fa-inbox fa-2x mb-2"></i>
                                 <p class="text-muted mb-0">No applications yet</p>
                             </div>
                             <?php else: ?>
-                            <div style="max-height: 300px; overflow-y: auto;">
+                            <div style="max-height: 400px; overflow-y: auto;">
                                 <?php foreach ($recent_applications as $app): ?>
                                 <div class="application-item">
                                     <div>
@@ -630,6 +830,36 @@ $page_title = 'Program Details: ' . $program_details['program_name'];
                             <?php endif; ?>
                         </div>
                     </div>
+                    
+                    <!-- Top Performing Students -->
+                    <div class="col-md-6">
+                        <div class="info-card">
+                            <h5 class="card-title">
+                                <i class="fas fa-star"></i>
+                                Top Performing Students
+                                <span class="badge bg-warning ms-2"><?php echo count($top_students); ?></span>
+                            </h5>
+                            
+                            <?php if (empty($top_students)): ?>
+                            <div class="empty-state">
+                                <i class="fas fa-trophy fa-2x mb-2"></i>
+                                <p class="text-muted mb-0">No reviewed applications yet</p>
+                            </div>
+                            <?php else: ?>
+                            <?php foreach ($top_students as $student): ?>
+                            <div class="student-item">
+                                <div>
+                                    <div class="fw-bold"><?php echo htmlspecialchars($student['student_name']); ?></div>
+                                    <div class="text-muted small"><?php echo htmlspecialchars($student['application_number']); ?></div>
+                                </div>
+                                <div class="student-score">
+                                    <?php echo number_format($student['avg_score'], 1); ?>/10
+                                </div>
+                            </div>
+                            <?php endforeach; ?>
+                            <?php endif; ?>
+                        </div>
+                    </div>
                 </div>
                 
                 <!-- Application Trends Chart -->
@@ -643,6 +873,23 @@ $page_title = 'Program Details: ' . $program_details['program_name'];
                             </h5>
                             <div class="chart-container">
                                 <canvas id="trendsChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <?php endif; ?>
+                
+                <!-- Status Distribution Chart -->
+                <?php if (!empty($status_distribution)): ?>
+                <div class="row mt-4">
+                    <div class="col-md-6">
+                        <div class="info-card">
+                            <h5 class="card-title">
+                                <i class="fas fa-chart-pie"></i>
+                                Application Status Distribution
+                            </h5>
+                            <div class="chart-container">
+                                <canvas id="statusChart"></canvas>
                             </div>
                         </div>
                     </div>
@@ -720,9 +967,62 @@ $page_title = 'Program Details: ' . $program_details['program_name'];
         });
         <?php endif; ?>
         
+        // Status distribution chart
+        <?php if (!empty($status_distribution)): ?>
+        document.addEventListener('DOMContentLoaded', function() {
+            const statusCtx = document.getElementById('statusChart').getContext('2d');
+            
+            const statusLabels = <?php echo json_encode(array_column($status_distribution, 'status')); ?>;
+            const statusData = <?php echo json_encode(array_column($status_distribution, 'count')); ?>;
+            
+            const statusColors = {
+                'draft': '#6c757d',
+                'submitted': '#17a2b8',
+                'under_review': '#ffc107',
+                'approved': '#28a745',
+                'rejected': '#dc3545',
+                'frozen': '#007bff',
+                'cancelled': '#6f42c1'
+            };
+            
+            const backgroundColors = statusLabels.map(status => statusColors[status] || '#6c757d');
+            
+            const statusChart = new Chart(statusCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: statusLabels.map(status => status.charAt(0).toUpperCase() + status.slice(1).replace('_', ' ')),
+                    datasets: [{
+                        data: statusData,
+                        backgroundColor: backgroundColors,
+                        borderWidth: 2,
+                        borderColor: '#fff'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom'
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                    const percentage = ((context.parsed / total) * 100).toFixed(1);
+                                    return context.label + ': ' + context.parsed + ' (' + percentage + '%)';
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        });
+        <?php endif; ?>
+        
         // Animate progress bars
         document.addEventListener('DOMContentLoaded', function() {
-            const progressBars = document.querySelectorAll('.progress-fill');
+            const progressBars = document.querySelectorAll('.progress-fill, .verification-progress-fill');
             progressBars.forEach(bar => {
                 const width = bar.style.width;
                 bar.style.width = '0%';
@@ -753,6 +1053,16 @@ $page_title = 'Program Details: ' . $program_details['program_name'];
                 }
             });
         });
+        
+        // Print functionality
+        function printProgramDetails() {
+            window.print();
+        }
+        
+        // Export functionality (basic)
+        function exportProgramData() {
+            window.print();
+        }
     </script>
 </body>
-</html> 
+</html>

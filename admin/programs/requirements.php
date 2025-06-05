@@ -671,4 +671,35 @@ $page_title = 'Certificate Requirements: ' . $program_details['program_name'];
             const existingSaveArea = document.querySelector('.text-center.mt-4');
             if (!existingSaveArea) {
                 const requirementsList = document.getElementById('requirementsList');
-                requirementsList.insertAdjacentHTML('afteren
+                requirementsList.insertAdjacentHTML('afterend', `
+                    <div class="text-center mt-4">
+                        <button type="submit" class="btn btn-success me-2">
+                            <i class="fas fa-save me-2"></i>Save Requirements
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary" onclick="resetForm()">
+                            <i class="fas fa-undo me-2"></i>Reset Changes
+                        </button>
+                    </div>
+                `);
+            }
+        }
+        
+        function resetForm() {
+            if (confirm('Are you sure you want to reset all changes?')) {
+                location.reload();
+            }
+        }
+        
+        // Auto-hide alerts
+        setTimeout(() => {
+            const alerts = document.querySelectorAll('.alert');
+            alerts.forEach(alert => {
+                if (alert.classList.contains('alert-dismissible')) {
+                    const bsAlert = new bootstrap.Alert(alert);
+                    bsAlert.close();
+                }
+            });
+        }, 8000);
+    </script>
+</body>
+</html>
