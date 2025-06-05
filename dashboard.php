@@ -1,9 +1,9 @@
 <?php
 /**
- * Modern Dashboard Page
+ * Enhanced Student Dashboard
  * 
- * File: dashboard.php
- * Purpose: Role-based dashboard with modern consistent styling
+ * File: dashboard.php (Student Section)
+ * Purpose: Modern student dashboard with enhanced UI/UX
  * Author: Student Application Management System
  * Created: 2025
  */
@@ -26,82 +26,51 @@ $program = new Program($db);
 $current_user_role = getCurrentUserRole();
 $current_user_id = getCurrentUserId();
 
-$page_title = 'Dashboard';
-$page_subtitle = 'Welcome to your dashboard';
+// Only show student dashboard for students
+if ($current_user_role !== ROLE_STUDENT) {
+    header('Location: ' . SITE_URL . '/admin/dashboard.php');
+    exit;
+}
+
+$page_title = 'Student Dashboard';
 
 // Get user details
 $user_details = $user->getUserById($current_user_id);
+$user_program = $program->getById($user_details['program_id']);
 
-// Initialize dashboard data
-$dashboard_data = [];
+// Get student application
+$student_application = $application->getByUserId($current_user_id);
 
-// Role-specific data loading
-switch ($current_user_role) {
-    case ROLE_STUDENT:
-        // Student dashboard data
-        $student_application = $application->getByUserId($current_user_id);
-        $dashboard_data['application'] = $student_application;
-        
-        if ($student_application) {
-            // Get application progress
-            $dashboard_data['progress'] = calculateApplicationProgress($student_application);
-        }
-        break;
-        
-    case ROLE_PROGRAM_ADMIN:
-        // Program admin dashboard data
-        $admin_programs = $program->getProgramsByAdmin($current_user_id);
-        $dashboard_data['programs'] = $admin_programs;
-        
-        // Get applications for admin's programs
-        $program_ids = array_column($admin_programs, 'id');
-        if (!empty($program_ids)) {
-            $filters = ['program_id' => $program_ids[0]]; // Default to first program
-            $dashboard_data['applications'] = $application->getApplications($filters, 1, 10);
-            $dashboard_data['program_stats'] = $program->getStatistics($program_ids[0]);
-        }
-        break;
-        
-    case ROLE_ADMIN:
-        // Admin dashboard data
-        $dashboard_data['all_programs'] = $program->getAllActivePrograms();
-        $dashboard_data['overall_stats'] = $program->getStatistics();
-        
-        // Recent applications
-        $dashboard_data['recent_applications'] = $application->getApplications([], 1, 10);
-        break;
-}
-
-/**
- * Calculate application completion progress
- */
+// Calculate application progress
 function calculateApplicationProgress($app) {
-    $total_steps = 5; // Basic info, education, documents, review, submit
+    if (!$app) return ['percentage' => 0, 'completed_steps' => 0, 'total_steps' => 5];
+    
+    $total_steps = 5;
     $completed_steps = 0;
     
-    // Basic info completed
+    // Step 1: Basic info completed
     if (!empty($app['student_name']) && !empty($app['father_name']) && 
         !empty($app['mobile_number']) && !empty($app['email'])) {
         $completed_steps++;
     }
     
-    // Address info completed
+    // Step 2: Address info completed
     if (!empty($app['present_village']) && !empty($app['permanent_village'])) {
         $completed_steps++;
     }
     
-    // Additional details completed
+    // Step 3: Additional details completed
     if (!empty($app['caste']) && !empty($app['religion'])) {
         $completed_steps++;
     }
     
-    // Documents uploaded (simplified check)
+    // Step 4: Documents uploaded (placeholder)
     if ($app['status'] !== STATUS_DRAFT) {
         $completed_steps++;
     }
     
-    // Submitted
-    if ($app['status'] !== STATUS_DRAFT) {
+    // Step 5: Submitted
+    if (in_array($app['status'], [STATUS_SUBMITTED, STATUS_UNDER_REVIEW, STATUS_APPROVED, STATUS_REJECTED, STATUS_FROZEN])) {
         $completed_steps++;
     }
     
@@ -112,9 +81,9 @@ function calculateApplicationProgress($app) {
     ];
 }
 
-/**
- * Helper function to get status color for badges
- */
+$progress = calculateApplicationProgress($student_application);
+
+// Get status color
 function getStatusColor($status) {
     switch ($status) {
         case STATUS_DRAFT: return 'secondary';
@@ -126,6 +95,30 @@ function getStatusColor($status) {
         default: return 'secondary';
     }
 }
+
+// Get next action
+function getNextAction($app) {
+    if (!$app) {
+        return ['text' => 'Start Application', 'url' => 'student/application.php', 'color' => 'primary'];
+    }
+    
+    switch ($app['status']) {
+        case STATUS_DRAFT:
+            return ['text' => 'Continue Application', 'url' => 'student/application.php', 'color' => 'primary'];
+        case STATUS_SUBMITTED:
+            return ['text' => 'Upload Documents', 'url' => 'student/documents.php', 'color' => 'info'];
+        case STATUS_UNDER_REVIEW:
+            return ['text' => 'View Status', 'url' => 'student/status.php', 'color' => 'warning'];
+        case STATUS_APPROVED:
+            return ['text' => 'Download Admission Letter', 'url' => 'student/admission-letter.php', 'color' => 'success'];
+        case STATUS_REJECTED:
+            return ['text' => 'View Feedback', 'url' => 'student/status.php', 'color' => 'danger'];
+        default:
+            return ['text' => 'View Application', 'url' => 'student/application.php', 'color' => 'secondary'];
+    }
+}
+
+$next_action = getNextAction($student_application);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -138,55 +131,134 @@ function getStatusColor($status) {
     <!-- CSS files -->
     <link href="https://cdn.jsdelivr.net/npm/@tabler/core@1.0.0-beta17/dist/css/tabler.min.css" rel="stylesheet"/>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet"/>
-    <link href="assets/css/global-styles.css" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
     
     <style>
-        /* Dashboard-specific styles */
-        .dashboard-layout {
-            display: flex;
-            min-height: 100vh;
+        :root {
+            --primary-color: #0054a6;
+            --primary-dark: #003d7a;
+            --secondary-color: #667eea;
+            --accent-color: #764ba2;
+            --success-color: #28a745;
+            --warning-color: #ffc107;
+            --danger-color: #dc3545;
+            --info-color: #17a2b8;
+            --text-dark: #2c3e50;
+            --text-light: #6c757d;
+            --bg-light: #f8f9fa;
+            --white: #ffffff;
+            --border-color: #e9ecef;
+            --shadow-sm: 0 2px 4px rgba(0,0,0,0.05);
+            --shadow-md: 0 4px 12px rgba(0,0,0,0.1);
+            --shadow-lg: 0 8px 25px rgba(0,0,0,0.15);
+            --radius-md: 0.5rem;
+            --radius-lg: 0.75rem;
+        }
+        
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
             background: var(--bg-light);
+            color: var(--text-dark);
         }
         
-        .dashboard-sidebar {
-            width: 280px;
-            background: var(--bg-white);
-            box-shadow: var(--shadow-sm);
-            border-right: 1px solid var(--border-light);
-        }
-        
-        .dashboard-main {
-            flex: 1;
+        .page-wrapper {
+            min-height: 100vh;
             display: flex;
             flex-direction: column;
         }
         
-        .dashboard-topbar {
-            background: var(--bg-white);
-            padding: var(--spacing-lg) var(--spacing-xl);
-            border-bottom: 1px solid var(--border-light);
-            display: flex;
-            justify-content: between;
-            align-items: center;
-        }
-        
-        .dashboard-content {
-            flex: 1;
-            padding: var(--spacing-xl);
-            overflow-y: auto;
-        }
-        
-        .welcome-banner {
-            background: var(--gradient-primary);
+        /* Modern Header */
+        .header-modern {
+            background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
             color: white;
-            padding: var(--spacing-xxl);
-            border-radius: var(--radius-lg);
-            margin-bottom: var(--spacing-xl);
+            padding: 2rem 0;
             position: relative;
             overflow: hidden;
         }
         
-        .welcome-banner::before {
+        .header-modern::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: radial-gradient(circle at 30% 50%, rgba(255,255,255,0.1) 0%, transparent 50%);
+        }
+        
+        .header-content {
+            position: relative;
+            z-index: 2;
+        }
+        
+        .welcome-title {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+        }
+        
+        .welcome-subtitle {
+            font-size: 1.2rem;
+            opacity: 0.9;
+            margin-bottom: 0;
+        }
+        
+        .user-avatar {
+            width: 80px;
+            height: 80px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2rem;
+            margin-right: 1.5rem;
+        }
+        
+        /* Dashboard Cards */
+        .dashboard-card {
+            background: var(--white);
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow-md);
+            border: none;
+            overflow: hidden;
+            transition: all 0.3s ease;
+            height: 100%;
+        }
+        
+        .dashboard-card:hover {
+            transform: translateY(-4px);
+            box-shadow: var(--shadow-lg);
+        }
+        
+        .card-header-modern {
+            background: var(--white);
+            border-bottom: 2px solid var(--border-color);
+            padding: 1.5rem;
+        }
+        
+        .card-title-modern {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin: 0;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+        
+        .card-body-modern {
+            padding: 1.5rem;
+        }
+        
+        /* Progress Card */
+        .progress-card {
+            background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+            color: white;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .progress-card::before {
             content: '';
             position: absolute;
             top: 0;
@@ -198,612 +270,663 @@ function getStatusColor($status) {
             transform: translate(50px, -50px);
         }
         
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: var(--spacing-lg);
-            margin-bottom: var(--spacing-xl);
+        .progress-content {
+            position: relative;
+            z-index: 2;
         }
         
-        .quick-actions-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: var(--spacing-md);
+        .progress-percentage {
+            font-size: 3rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
         }
         
-        .action-card {
-            background: var(--bg-white);
+        .progress-text {
+            font-size: 1.1rem;
+            opacity: 0.9;
+            margin-bottom: 1.5rem;
+        }
+        
+        .progress-bar-modern {
+            height: 8px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 4px;
+            overflow: hidden;
+            margin-bottom: 1rem;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: rgba(255, 255, 255, 0.9);
+            border-radius: 4px;
+            transition: width 0.8s ease;
+        }
+        
+        /* Quick Actions */
+        .quick-action {
+            background: var(--white);
             border-radius: var(--radius-lg);
-            padding: var(--spacing-lg);
+            padding: 1.5rem;
             text-align: center;
             box-shadow: var(--shadow-sm);
+            border: 2px solid var(--border-color);
             transition: all 0.3s ease;
-            border: 2px solid transparent;
             text-decoration: none;
             color: var(--text-dark);
+            display: block;
+            height: 100%;
         }
         
-        .action-card:hover {
-            box-shadow: var(--shadow-md);
-            transform: translateY(-4px);
+        .quick-action:hover {
+            transform: translateY(-6px);
+            box-shadow: var(--shadow-lg);
             border-color: var(--primary-color);
-            color: var(--text-dark);
             text-decoration: none;
+            color: var(--text-dark);
         }
         
         .action-icon {
             width: 60px;
             height: 60px;
-            background: var(--gradient-primary);
+            background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
             border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
-            margin: 0 auto var(--spacing-md);
-            color: white;
+            margin: 0 auto 1rem;
             font-size: 1.5rem;
+            color: white;
+            transition: transform 0.3s ease;
         }
         
-        .progress-section {
-            background: var(--bg-white);
-            border-radius: var(--radius-lg);
-            padding: var(--spacing-xl);
-            box-shadow: var(--shadow-md);
-            margin-bottom: var(--spacing-xl);
+        .quick-action:hover .action-icon {
+            transform: scale(1.1) rotate(10deg);
         }
         
-        .application-timeline {
+        .action-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+        
+        .action-description {
+            font-size: 0.9rem;
+            color: var(--text-light);
+            margin: 0;
+        }
+        
+        /* Status Timeline */
+        .status-timeline {
             position: relative;
-            padding-left: var(--spacing-xl);
+            padding-left: 2rem;
         }
         
         .timeline-item {
             position: relative;
-            padding-bottom: var(--spacing-lg);
+            padding-bottom: 1.5rem;
         }
         
         .timeline-item::before {
             content: '';
             position: absolute;
-            left: -24px;
-            top: 8px;
+            left: -1.75rem;
+            top: 0.5rem;
             width: 12px;
             height: 12px;
             background: var(--border-color);
             border-radius: 50%;
-            border: 3px solid var(--bg-white);
+            border: 3px solid var(--white);
+            box-shadow: 0 0 0 3px var(--border-color);
         }
         
         .timeline-item.completed::before {
             background: var(--success-color);
+            box-shadow: 0 0 0 3px var(--success-color);
         }
         
         .timeline-item.current::before {
             background: var(--primary-color);
+            box-shadow: 0 0 0 3px var(--primary-color);
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 3px var(--primary-color); }
+            50% { box-shadow: 0 0 0 8px rgba(0, 84, 166, 0.3); }
+            100% { box-shadow: 0 0 0 3px var(--primary-color); }
         }
         
         .timeline-item::after {
             content: '';
             position: absolute;
-            left: -18px;
-            top: 20px;
+            left: -1.125rem;
+            top: 1.5rem;
             width: 2px;
-            height: calc(100% - 12px);
-            background: var(--border-light);
+            height: calc(100% - 1rem);
+            background: var(--border-color);
         }
         
         .timeline-item:last-child::after {
             display: none;
         }
         
-        .recent-table {
-            background: var(--bg-white);
-            border-radius: var(--radius-lg);
-            overflow: hidden;
-            box-shadow: var(--shadow-md);
+        .timeline-content h6 {
+            font-weight: 600;
+            margin-bottom: 0.25rem;
         }
         
+        .timeline-content small {
+            color: var(--text-light);
+        }
+        
+        /* Statistics Cards */
+        .stat-card {
+            background: var(--white);
+            border-radius: var(--radius-lg);
+            padding: 1.5rem;
+            text-align: center;
+            box-shadow: var(--shadow-md);
+            border-left: 4px solid var(--primary-color);
+            transition: all 0.3s ease;
+        }
+        
+        .stat-card:hover {
+            transform: translateY(-4px);
+            box-shadow: var(--shadow-lg);
+        }
+        
+        .stat-number {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--primary-color);
+            margin-bottom: 0.5rem;
+        }
+        
+        .stat-label {
+            color: var(--text-light);
+            font-size: 0.9rem;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        /* Next Action Button */
+        .next-action-btn {
+            padding: 1rem 2rem;
+            border-radius: var(--radius-lg);
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            transition: all 0.3s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.75rem;
+            text-decoration: none;
+            border: none;
+            cursor: pointer;
+        }
+        
+        .next-action-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-md);
+            text-decoration: none;
+        }
+        
+        .btn-primary-modern {
+            background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+            color: white;
+        }
+        
+        .btn-info-modern {
+            background: linear-gradient(135deg, var(--info-color), var(--secondary-color));
+            color: white;
+        }
+        
+        .btn-success-modern {
+            background: linear-gradient(135deg, var(--success-color), #20c997);
+            color: white;
+        }
+        
+        .btn-warning-modern {
+            background: linear-gradient(135deg, var(--warning-color), #fd7e14);
+            color: var(--text-dark);
+        }
+        
+        .btn-danger-modern {
+            background: linear-gradient(135deg, var(--danger-color), #e74c3c);
+            color: white;
+        }
+        
+        /* Recent Activity */
+        .activity-item {
+            display: flex;
+            align-items: center;
+            padding: 1rem;
+            border-bottom: 1px solid var(--border-color);
+            transition: background-color 0.3s ease;
+        }
+        
+        .activity-item:hover {
+            background: var(--bg-light);
+        }
+        
+        .activity-item:last-child {
+            border-bottom: none;
+        }
+        
+        .activity-icon {
+            width: 40px;
+            height: 40px;
+            background: var(--bg-light);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 1rem;
+            color: var(--primary-color);
+        }
+        
+        .activity-content {
+            flex: 1;
+        }
+        
+        .activity-title {
+            font-weight: 600;
+            margin-bottom: 0.25rem;
+        }
+        
+        .activity-time {
+            color: var(--text-light);
+            font-size: 0.85rem;
+        }
+        
+        /* Responsive Design */
         @media (max-width: 768px) {
-            .dashboard-layout {
-                flex-direction: column;
+            .welcome-title {
+                font-size: 2rem;
             }
             
-            .dashboard-sidebar {
-                width: 100%;
-                position: fixed;
-                top: 0;
-                left: -100%;
-                z-index: 1000;
-                transition: left 0.3s ease;
+            .user-avatar {
+                width: 60px;
+                height: 60px;
+                font-size: 1.5rem;
+                margin-right: 1rem;
             }
             
-            .dashboard-sidebar.show {
-                left: 0;
-            }
-            
-            .stats-grid {
-                grid-template-columns: 1fr;
+            .progress-percentage {
+                font-size: 2.5rem;
             }
             
             .quick-actions-grid {
                 grid-template-columns: repeat(2, 1fr);
             }
         }
+        
+        @media (max-width: 480px) {
+            .quick-actions-grid {
+                grid-template-columns: 1fr;
+            }
+        }
     </style>
 </head>
 <body>
-    <div class="dashboard-layout">
-        <!-- Sidebar -->
-        <aside class="dashboard-sidebar">
-            <div class="sidebar-header-modern">
-                <div class="navbar-brand-modern">
-                    <img src="assets/images/logo.png" alt="<?php echo SITE_NAME; ?>" style="width: 40px; height: 40px; margin-right: 12px; border-radius: 8px;" 
-                         onerror="this.style.display='none'">
-                    <span><?php echo SITE_NAME; ?></span>
-                </div>
-            </div>
-            
-            <nav class="sidebar-nav-modern">
-                <!-- Dashboard -->
-                <div class="nav-item">
-                    <a class="nav-link active" href="dashboard.php">
-                        <i class="fas fa-tachometer-alt"></i>
-                        <span>Dashboard</span>
-                    </a>
-                </div>
-                
-                <?php if ($current_user_role === ROLE_STUDENT): ?>
-                <!-- Student Menu -->
-                <div class="nav-item">
-                    <a class="nav-link" href="student/application.php">
-                        <i class="fas fa-file-alt"></i>
-                        <span>My Application</span>
-                    </a>
-                </div>
-                
-                <div class="nav-item">
-                    <a class="nav-link" href="student/documents.php">
-                        <i class="fas fa-paperclip"></i>
-                        <span>Documents</span>
-                    </a>
-                </div>
-                
-                <div class="nav-item">
-                    <a class="nav-link" href="student/status.php">
-                        <i class="fas fa-chart-line"></i>
-                        <span>Application Status</span>
-                    </a>
-                </div>
-                
-                <?php elseif ($current_user_role === ROLE_PROGRAM_ADMIN): ?>
-                <!-- Program Admin Menu -->
-                <div class="nav-item">
-                    <a class="nav-link" href="admin/applications/list.php">
-                        <i class="fas fa-list"></i>
-                        <span>All Applications</span>
-                    </a>
-                </div>
-                
-                <div class="nav-item">
-                    <a class="nav-link" href="admin/applications/pending.php">
-                        <i class="fas fa-clock"></i>
-                        <span>Pending Review</span>
-                    </a>
-                </div>
-                
-                <div class="nav-item">
-                    <a class="nav-link" href="admin/students/list.php">
-                        <i class="fas fa-users"></i>
-                        <span>Students</span>
-                    </a>
-                </div>
-                
-                <div class="nav-item">
-                    <a class="nav-link" href="admin/reports/program.php">
-                        <i class="fas fa-chart-bar"></i>
-                        <span>Reports</span>
-                    </a>
-                </div>
-                
-                <?php elseif ($current_user_role === ROLE_ADMIN): ?>
-                <!-- Admin Menu -->
-                <div class="nav-item">
-                    <a class="nav-link" href="admin/applications/list.php">
-                        <i class="fas fa-file-alt"></i>
-                        <span>Applications</span>
-                    </a>
-                </div>
-                
-                <div class="nav-item">
-                    <a class="nav-link" href="admin/users/students.php">
-                        <i class="fas fa-user-graduate"></i>
-                        <span>Students</span>
-                    </a>
-                </div>
-                
-                <div class="nav-item">
-                    <a class="nav-link" href="admin/users/program-admins.php">
-                        <i class="fas fa-user-tie"></i>
-                        <span>Program Admins</span>
-                    </a>
-                </div>
-                
-                <div class="nav-item">
-                    <a class="nav-link" href="admin/programs/list.php">
-                        <i class="fas fa-graduation-cap"></i>
-                        <span>Programs</span>
-                    </a>
-                </div>
-                
-                <div class="nav-item">
-                    <a class="nav-link" href="admin/reports/overview.php">
-                        <i class="fas fa-chart-bar"></i>
-                        <span>Reports</span>
-                    </a>
-                </div>
-                
-                <div class="nav-item">
-                    <a class="nav-link" href="admin/settings/general.php">
-                        <i class="fas fa-cog"></i>
-                        <span>Settings</span>
-                    </a>
-                </div>
-                <?php endif; ?>
-                
-                <!-- Profile -->
-                <div class="nav-item" style="margin-top: auto;">
-                    <a class="nav-link" href="profile.php">
-                        <i class="fas fa-user"></i>
-                        <span>Profile</span>
-                    </a>
-                </div>
-            </nav>
-        </aside>
-        
-        <!-- Main Content -->
-        <div class="dashboard-main">
-            <!-- Top Bar -->
-            <header class="dashboard-topbar">
-                <div class="d-flex-modern align-items-center-modern">
-                    <button class="btn-modern btn-secondary-modern d-md-none me-3" id="sidebarToggle">
-                        <i class="fas fa-bars"></i>
-                    </button>
-                    <div>
-                        <h4 class="mb-0-modern"><?php echo $page_title; ?></h4>
-                        <small class="text-muted-modern"><?php echo $page_subtitle; ?></small>
+    <div class="page-wrapper">
+        <!-- Modern Header -->
+        <div class="header-modern">
+            <div class="container-xl">
+                <div class="header-content">
+                    <div class="row align-items-center">
+                        <div class="col-auto">
+                            <div class="user-avatar">
+                                <i class="fas fa-user-graduate"></i>
+                            </div>
+                        </div>
+                        <div class="col">
+                            <h1 class="welcome-title">
+                                Welcome back, <?php echo htmlspecialchars(explode('@', $user_details['email'])[0]); ?>!
+                            </h1>
+                            <p class="welcome-subtitle">
+                                <?php echo htmlspecialchars($user_program['program_name'] ?? 'Your Academic Journey'); ?> • Academic Year <?php echo CURRENT_ACADEMIC_YEAR; ?>
+                            </p>
+                        </div>
+                        <div class="col-auto">
+                            <div class="text-end">
+                                <div class="h3 mb-1"><?php echo date('d M Y'); ?></div>
+                                <div class="opacity-75"><?php echo date('l'); ?></div>
+                            </div>
+                        </div>
                     </div>
                 </div>
-                
-                <div class="d-flex-modern align-items-center-modern">
-                    <!-- Notifications -->
-                    <div class="dropdown me-3">
-                        <button class="btn-modern btn-secondary-modern" type="button" data-bs-toggle="dropdown">
-                            <i class="fas fa-bell"></i>
-                            <span class="badge badge-danger-modern" style="position: absolute; top: -5px; right: -5px; font-size: 0.6rem;">3</span>
-                        </button>
-                        <div class="dropdown-menu dropdown-menu-end" style="width: 300px;">
-                            <h6 class="dropdown-header">Notifications</h6>
-                            <a href="#" class="dropdown-item">
-                                <div class="d-flex">
-                                    <div class="flex-fill">
-                                        <div class="font-weight-medium">Application submitted</div>
-                                        <div class="text-muted small">2 minutes ago</div>
-                                    </div>
+            </div>
+        </div>
+        
+        <!-- Main Content -->
+        <div class="page-body">
+            <div class="container-xl">
+                <div class="row g-4">
+                    <!-- Application Progress -->
+                    <div class="col-lg-4">
+                        <div class="dashboard-card progress-card">
+                            <div class="card-body-modern progress-content">
+                                <div class="progress-percentage"><?php echo $progress['percentage']; ?>%</div>
+                                <div class="progress-text">Application Complete</div>
+                                
+                                <div class="progress-bar-modern">
+                                    <div class="progress-fill" style="width: <?php echo $progress['percentage']; ?>%"></div>
                                 </div>
-                            </a>
+                                
+                                <div class="text-white-50">
+                                    <?php echo $progress['completed_steps']; ?> of <?php echo $progress['total_steps']; ?> steps completed
+                                </div>
+                                
+                                <?php if ($student_application): ?>
+                                <div class="mt-3">
+                                    <small class="text-white-75">
+                                        Application #: <strong><?php echo htmlspecialchars($student_application['application_number']); ?></strong>
+                                    </small>
+                                </div>
+                                <?php endif; ?>
+                            </div>
                         </div>
                     </div>
                     
-                    <!-- User Menu -->
-                    <div class="dropdown">
-                        <button class="btn-modern btn-secondary-modern" type="button" data-bs-toggle="dropdown">
-                            <i class="fas fa-user me-2"></i>
-                            <?php echo htmlspecialchars($user_details['email']); ?>
-                            <i class="fas fa-chevron-down ms-2"></i>
-                        </button>
-                        <div class="dropdown-menu dropdown-menu-end">
-                            <a href="profile.php" class="dropdown-item">
-                                <i class="fas fa-user me-2"></i>Profile
-                            </a>
-                            <a href="change-password.php" class="dropdown-item">
-                                <i class="fas fa-key me-2"></i>Change Password
-                            </a>
-                            <div class="dropdown-divider"></div>
-                            <a href="auth/logout.php" class="dropdown-item text-danger">
-                                <i class="fas fa-sign-out-alt me-2"></i>Logout
-                            </a>
-                        </div>
-                    </div>
-                </div>
-            </header>
-            
-            <!-- Dashboard Content -->
-            <main class="dashboard-content">
-                <!-- Welcome Banner -->
-                <div class="welcome-banner fade-in">
-                    <div class="row align-items-center">
-                        <div class="col-md-8">
-                            <h2 class="mb-2">Welcome back, <?php echo htmlspecialchars(explode('@', $user_details['email'])[0]); ?>!</h2>
-                            <p class="mb-0 opacity-75">
-                                <?php if ($current_user_role === ROLE_STUDENT): ?>
-                                Manage your application for <?php echo htmlspecialchars($user_details['program_name'] ?? 'your selected program'); ?>
-                                <?php elseif ($current_user_role === ROLE_PROGRAM_ADMIN): ?>
-                                Manage applications and students for your programs
-                                <?php else: ?>
-                                Administrative dashboard for managing the entire system
-                                <?php endif; ?>
-                            </p>
-                        </div>
-                        <div class="col-md-4 text-end">
-                            <div class="fs-1">
-                                <i class="fas fa-<?php echo $current_user_role === ROLE_STUDENT ? 'user-graduate' : 
-                                    ($current_user_role === ROLE_PROGRAM_ADMIN ? 'user-tie' : 'crown'); ?>"></i>
+                    <!-- Current Status -->
+                    <div class="col-lg-4">
+                        <div class="dashboard-card">
+                            <div class="card-header-modern">
+                                <h3 class="card-title-modern">
+                                    <i class="fas fa-clipboard-check text-primary"></i>
+                                    Current Status
+                                </h3>
                             </div>
-                        </div>
-                    </div>
-                </div>
-                
-                <?php if ($current_user_role === ROLE_STUDENT): ?>
-                <!-- Student Dashboard -->
-                
-                <!-- Application Progress -->
-                <?php if ($dashboard_data['application']): ?>
-                <div class="progress-section slide-up">
-                    <div class="row">
-                        <div class="col-md-8">
-                            <h5 class="mb-3">
-                                <i class="fas fa-chart-line text-primary-modern me-2"></i>
-                                Application Progress
-                            </h5>
-                            
-                            <?php 
-                            $progress = $dashboard_data['progress'];
-                            $status = $dashboard_data['application']['status'];
-                            ?>
-                            
-                            <div class="mb-4">
-                                <div class="d-flex-modern justify-content-between-modern mb-2">
-                                    <span class="text-muted-modern">Completion Progress</span>
-                                    <span class="fw-bold text-primary-modern"><?php echo $progress['percentage']; ?>%</span>
-                                </div>
-                                <div class="progress-modern">
-                                    <div class="progress-bar-modern" style="width: <?php echo $progress['percentage']; ?>%"></div>
-                                </div>
-                                <small class="text-muted-modern">
-                                    <?php echo $progress['completed_steps']; ?> of <?php echo $progress['total_steps']; ?> steps completed
-                                </small>
-                            </div>
-                            
-                            <div class="row g-3">
-                                <div class="col-md-4">
-                                    <strong>Application Number:</strong><br>
-                                    <code class="text-primary-modern"><?php echo htmlspecialchars($dashboard_data['application']['application_number']); ?></code>
-                                </div>
-                                <div class="col-md-4">
-                                    <strong>Status:</strong><br>
-                                    <span class="badge-modern badge-<?php echo getStatusColor($status); ?>-modern">
-                                        <?php echo ucwords(str_replace('_', ' ', $status)); ?>
+                            <div class="card-body-modern text-center">
+                                <?php if ($student_application): ?>
+                                <div class="mb-3">
+                                    <span class="badge bg-<?php echo getStatusColor($student_application['status']); ?> badge-lg" style="padding: 0.75rem 1.5rem; font-size: 1rem;">
+                                        <?php echo ucwords(str_replace('_', ' ', $student_application['status'])); ?>
                                     </span>
                                 </div>
-                                <div class="col-md-4">
-                                    <strong>Submitted:</strong><br>
-                                    <?php echo $dashboard_data['application']['submitted_at'] 
-                                        ? formatDateTime($dashboard_data['application']['submitted_at']) 
-                                        : '<span class="text-muted-modern">Not yet submitted</span>'; ?>
+                                
+                                <?php if ($student_application['submitted_at']): ?>
+                                <p class="text-muted mb-3">
+                                    Submitted on <?php echo formatDate($student_application['submitted_at']); ?>
+                                </p>
+                                <?php endif; ?>
+                                
+                                <a href="<?php echo $next_action['url']; ?>" 
+                                   class="next-action-btn btn-<?php echo $next_action['color']; ?>-modern">
+                                    <i class="fas fa-arrow-right"></i>
+                                    <?php echo $next_action['text']; ?>
+                                </a>
+                                <?php else: ?>
+                                <div class="text-center py-4">
+                                    <i class="fas fa-plus-circle fa-3x text-primary mb-3"></i>
+                                    <h4>Start Your Application</h4>
+                                    <p class="text-muted">Begin your academic journey by creating your application.</p>
+                                    <a href="student/application.php" class="next-action-btn btn-primary-modern">
+                                        <i class="fas fa-plus"></i>
+                                        Create Application
+                                    </a>
                                 </div>
+                                <?php endif; ?>
                             </div>
                         </div>
-                        
-                        <div class="col-md-4">
-                            <h6 class="mb-3">Application Timeline</h6>
-                            <div class="application-timeline">
-                                <div class="timeline-item completed">
-                                    <strong>Application Created</strong><br>
-                                    <small class="text-muted-modern">✓ Complete</small>
+                    </div>
+                    
+                    <!-- Program Info -->
+                    <div class="col-lg-4">
+                        <div class="dashboard-card">
+                            <div class="card-header-modern">
+                                <h3 class="card-title-modern">
+                                    <i class="fas fa-graduation-cap text-primary"></i>
+                                    Program Details
+                                </h3>
+                            </div>
+                            <div class="card-body-modern">
+                                <h5 class="mb-3"><?php echo htmlspecialchars($user_program['program_name']); ?></h5>
+                                
+                                <div class="row g-3">
+                                    <div class="col-6">
+                                        <div class="stat-card">
+                                            <div class="stat-number"><?php echo htmlspecialchars($user_program['duration_years']); ?></div>
+                                            <div class="stat-label">Years</div>
+                                        </div>
+                                    </div>
+                                    <div class="col-6">
+                                        <div class="stat-card">
+                                            <div class="stat-number"><?php echo htmlspecialchars($user_program['total_seats']); ?></div>
+                                            <div class="stat-label">Total Seats</div>
+                                        </div>
+                                    </div>
                                 </div>
-                                <div class="timeline-item <?php echo $progress['percentage'] >= 40 ? 'completed' : 'current'; ?>">
-                                    <strong>Personal Details</strong><br>
-                                    <small class="text-muted-modern"><?php echo $progress['percentage'] >= 40 ? '✓ Complete' : 'In Progress'; ?></small>
-                                </div>
-                                <div class="timeline-item <?php echo $progress['percentage'] >= 60 ? 'completed' : ''; ?>">
-                                    <strong>Documents Upload</strong><br>
-                                    <small class="text-muted-modern"><?php echo $progress['percentage'] >= 60 ? '✓ Complete' : 'Pending'; ?></small>
-                                </div>
-                                <div class="timeline-item <?php echo $progress['percentage'] >= 80 ? 'completed' : ''; ?>">
-                                    <strong>Review & Submit</strong><br>
-                                    <small class="text-muted-modern"><?php echo $progress['percentage'] >= 80 ? '✓ Complete' : 'Pending'; ?></small>
-                                </div>
-                                <div class="timeline-item <?php echo $status === STATUS_APPROVED ? 'completed' : ''; ?>">
-                                    <strong>Approval</strong><br>
-                                    <small class="text-muted-modern"><?php echo $status === STATUS_APPROVED ? '✓ Approved' : 'Under Review'; ?></small>
+                                
+                                <div class="mt-3">
+                                    <small class="text-muted">
+                                        <strong>Department:</strong> <?php echo htmlspecialchars($user_program['department']); ?><br>
+                                        <strong>Program Code:</strong> <?php echo htmlspecialchars($user_program['program_code']); ?>
+                                    </small>
                                 </div>
                             </div>
                         </div>
                     </div>
                 </div>
-                <?php endif; ?>
                 
                 <!-- Quick Actions -->
-                <div class="mb-4">
-                    <h5 class="mb-3">
-                        <i class="fas fa-bolt text-primary-modern me-2"></i>
-                        Quick Actions
-                    </h5>
-                    <div class="quick-actions-grid">
-                        <a href="student/application.php" class="action-card">
+                <div class="row g-4 mt-2">
+                    <div class="col-12">
+                        <h3 class="mb-4">
+                            <i class="fas fa-bolt text-primary me-2"></i>
+                            Quick Actions
+                        </h3>
+                    </div>
+                    
+                    <div class="col-lg-3 col-md-6">
+                        <a href="student/application.php" class="quick-action">
                             <div class="action-icon">
                                 <i class="fas fa-edit"></i>
                             </div>
-                            <h6>Edit Application</h6>
-                            <p class="text-muted-modern mb-0">Update your application details</p>
+                            <h5 class="action-title">My Application</h5>
+                            <p class="action-description">View and edit your application details</p>
                         </a>
-                        
-                        <a href="student/documents.php" class="action-card">
+                    </div>
+                    
+                    <div class="col-lg-3 col-md-6">
+                        <a href="student/documents.php" class="quick-action">
                             <div class="action-icon">
-                                <i class="fas fa-upload"></i>
+                                <i class="fas fa-file-upload"></i>
                             </div>
-                            <h6>Upload Documents</h6>
-                            <p class="text-muted-modern mb-0">Submit required certificates</p>
+                            <h5 class="action-title">Documents</h5>
+                            <p class="action-description">Upload and manage required documents</p>
                         </a>
-                        
-                        <a href="student/status.php" class="action-card">
+                    </div>
+                    
+                    <div class="col-lg-3 col-md-6">
+                        <a href="student/status.php" class="quick-action">
                             <div class="action-icon">
-                                <i class="fas fa-eye"></i>
+                                <i class="fas fa-chart-line"></i>
                             </div>
-                            <h6>View Status</h6>
-                            <p class="text-muted-modern mb-0">Track application progress</p>
+                            <h5 class="action-title">Track Status</h5>
+                            <p class="action-description">Monitor your application progress</p>
                         </a>
-                        
-                        <a href="profile.php" class="action-card">
+                    </div>
+                    
+                    <div class="col-lg-3 col-md-6">
+                        <a href="profile.php" class="quick-action">
                             <div class="action-icon">
-                                <i class="fas fa-user"></i>
+                                <i class="fas fa-user-cog"></i>
                             </div>
-                            <h6>Update Profile</h6>
-                            <p class="text-muted-modern mb-0">Manage account settings</p>
+                            <h5 class="action-title">Profile</h5>
+                            <p class="action-description">Manage your account settings</p>
                         </a>
                     </div>
                 </div>
                 
-                <?php elseif ($current_user_role === ROLE_PROGRAM_ADMIN): ?>
-                <!-- Program Admin Dashboard -->
-                
-                <!-- Statistics Cards -->
-                <div class="stats-grid">
-                    <div class="stats-card-modern">
-                        <div class="stats-icon">
-                            <i class="fas fa-file-alt"></i>
+                <!-- Application Timeline & Recent Activity -->
+                <div class="row g-4 mt-2">
+                    <!-- Application Timeline -->
+                    <div class="col-lg-6">
+                        <div class="dashboard-card">
+                            <div class="card-header-modern">
+                                <h3 class="card-title-modern">
+                                    <i class="fas fa-timeline text-primary"></i>
+                                    Application Timeline
+                                </h3>
+                            </div>
+                            <div class="card-body-modern">
+                                <div class="status-timeline">
+                                    <div class="timeline-item completed">
+                                        <div class="timeline-content">
+                                            <h6>Account Created</h6>
+                                            <small>Registration completed successfully</small>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="timeline-item <?php echo $progress['percentage'] >= 20 ? 'completed' : 'current'; ?>">
+                                        <div class="timeline-content">
+                                            <h6>Application Started</h6>
+                                            <small><?php echo $progress['percentage'] >= 20 ? 'Personal details filled' : 'Fill in your personal information'; ?></small>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="timeline-item <?php echo $progress['percentage'] >= 60 ? 'completed' : ($progress['percentage'] >= 20 ? 'current' : ''); ?>">
+                                        <div class="timeline-content">
+                                            <h6>Documents Upload</h6>
+                                            <small><?php echo $progress['percentage'] >= 60 ? 'All documents submitted' : 'Upload required certificates'; ?></small>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="timeline-item <?php echo $progress['percentage'] >= 80 ? 'completed' : ($progress['percentage'] >= 60 ? 'current' : ''); ?>">
+                                        <div class="timeline-content">
+                                            <h6>Application Review</h6>
+                                            <small><?php echo $progress['percentage'] >= 80 ? 'Under admin review' : 'Submit for review'; ?></small>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="timeline-item <?php echo $student_application && $student_application['status'] === STATUS_APPROVED ? 'completed' : ($progress['percentage'] >= 80 ? 'current' : ''); ?>">
+                                        <div class="timeline-content">
+                                            <h6>Final Decision</h6>
+                                            <small><?php echo $student_application && $student_application['status'] === STATUS_APPROVED ? 'Application approved!' : 'Awaiting final decision'; ?></small>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
-                        <span class="stats-number"><?php echo $dashboard_data['program_stats']['total_applications'] ?? 0; ?></span>
-                        <span class="stats-label">Total Applications</span>
                     </div>
                     
-                    <div class="stats-card-modern">
-                        <div class="stats-icon">
-                            <i class="fas fa-clock"></i>
+                    <!-- Recent Activity -->
+                    <div class="col-lg-6">
+                        <div class="dashboard-card">
+                            <div class="card-header-modern">
+                                <h3 class="card-title-modern">
+                                    <i class="fas fa-history text-primary"></i>
+                                    Recent Activity
+                                </h3>
+                            </div>
+                            <div class="card-body-modern p-0">
+                                <div class="activity-item">
+                                    <div class="activity-icon">
+                                        <i class="fas fa-user-plus"></i>
+                                    </div>
+                                    <div class="activity-content">
+                                        <div class="activity-title">Account Created</div>
+                                        <div class="activity-time"><?php echo formatDate($user_details['date_created']); ?></div>
+                                    </div>
+                                </div>
+                                
+                                <?php if ($student_application): ?>
+                                <div class="activity-item">
+                                    <div class="activity-icon">
+                                        <i class="fas fa-file-alt"></i>
+                                    </div>
+                                    <div class="activity-content">
+                                        <div class="activity-title">Application Started</div>
+                                        <div class="activity-time"><?php echo formatDate($student_application['date_created']); ?></div>
+                                    </div>
+                                </div>
+                                
+                                <?php if ($student_application['submitted_at']): ?>
+                                <div class="activity-item">
+                                    <div class="activity-icon">
+                                        <i class="fas fa-paper-plane"></i>
+                                    </div>
+                                    <div class="activity-content">
+                                        <div class="activity-title">Application Submitted</div>
+                                        <div class="activity-time"><?php echo formatDate($student_application['submitted_at']); ?></div>
+                                    </div>
+                                </div>
+                                <?php endif; ?>
+                                <?php endif; ?>
+                                
+                                <div class="activity-item">
+                                    <div class="activity-icon">
+                                        <i class="fas fa-sign-in-alt"></i>
+                                    </div>
+                                    <div class="activity-content">
+                                        <div class="activity-title">Last Login</div>
+                                        <div class="activity-time"><?php echo $user_details['last_login'] ? formatDateTime($user_details['last_login']) : 'First time login'; ?></div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
-                        <span class="stats-number"><?php echo $dashboard_data['program_stats']['submitted_applications'] ?? 0; ?></span>
-                        <span class="stats-label">Pending Review</span>
-                    </div>
-                    
-                    <div class="stats-card-modern">
-                        <div class="stats-icon">
-                            <i class="fas fa-check"></i>
-                        </div>
-                        <span class="stats-number"><?php echo $dashboard_data['program_stats']['approved_applications'] ?? 0; ?></span>
-                        <span class="stats-label">Approved</span>
-                    </div>
-                    
-                    <div class="stats-card-modern">
-                        <div class="stats-icon">
-                            <i class="fas fa-times"></i>
-                        </div>
-                        <span class="stats-number"><?php echo $dashboard_data['program_stats']['rejected_applications'] ?? 0; ?></span>
-                        <span class="stats-label">Rejected</span>
                     </div>
                 </div>
                 
-                <?php else: // ROLE_ADMIN ?>
-                <!-- Admin Dashboard -->
-                
-                <!-- Overall Statistics -->
-                <div class="stats-grid">
-                    <?php if (!empty($dashboard_data['overall_stats'])): ?>
-                    <?php 
-                    $total_apps = array_sum(array_column($dashboard_data['overall_stats'], 'total_applications'));
-                    $total_approved = array_sum(array_column($dashboard_data['overall_stats'], 'approved_applications'));
-                    $total_pending = array_sum(array_column($dashboard_data['overall_stats'], 'submitted_applications'));
-                    $total_programs = count($dashboard_data['overall_stats']);
-                    ?>
-                    
-                    <div class="stats-card-modern">
-                        <div class="stats-icon">
-                            <i class="fas fa-graduation-cap"></i>
+                <!-- Important Information -->
+                <div class="row g-4 mt-2">
+                    <div class="col-12">
+                        <div class="dashboard-card">
+                            <div class="card-header-modern">
+                                <h3 class="card-title-modern">
+                                    <i class="fas fa-info-circle text-primary"></i>
+                                    Important Information
+                                </h3>
+                            </div>
+                            <div class="card-body-modern">
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <h6><i class="fas fa-calendar-alt text-info me-2"></i>Important Dates</h6>
+                                        <ul class="list-unstyled">
+                                            <li class="mb-2">
+                                                <strong>Application Deadline:</strong> 
+                                                <span class="text-danger"><?php echo formatDate(APPLICATION_END_DATE); ?></span>
+                                            </li>
+                                            <li class="mb-2">
+                                                <strong>Document Submission:</strong> 
+                                                <span class="text-warning"><?php echo formatDate(APPLICATION_END_DATE); ?></span>
+                                            </li>
+                                            <li class="mb-2">
+                                                <strong>Academic Year:</strong> 
+                                                <span class="text-info"><?php echo CURRENT_ACADEMIC_YEAR; ?></span>
+                                            </li>
+                                        </ul>
+                                    </div>
+                                    
+                                    <div class="col-md-6">
+                                        <h6><i class="fas fa-question-circle text-success me-2"></i>Need Help?</h6>
+                                        <ul class="list-unstyled">
+                                            <li class="mb-2">
+                                                <a href="help.php" class="text-decoration-none">
+                                                    <i class="fas fa-book me-2"></i>Help & FAQ
+                                                </a>
+                                            </li>
+                                            <li class="mb-2">
+                                                <a href="contact.php" class="text-decoration-none">
+                                                    <i class="fas fa-phone me-2"></i>Contact Support
+                                                </a>
+                                            </li>
+                                            <li class="mb-2">
+                                                <a href="mailto:<?php echo ADMIN_EMAIL; ?>" class="text-decoration-none">
+                                                    <i class="fas fa-envelope me-2"></i><?php echo ADMIN_EMAIL; ?>
+                                                </a>
+                                            </li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
-                        <span class="stats-number"><?php echo $total_programs; ?></span>
-                        <span class="stats-label">Active Programs</span>
-                    </div>
-                    
-                    <div class="stats-card-modern">
-                        <div class="stats-icon">
-                            <i class="fas fa-file-alt"></i>
-                        </div>
-                        <span class="stats-number"><?php echo $total_apps; ?></span>
-                        <span class="stats-label">Total Applications</span>
-                    </div>
-                    
-                    <div class="stats-card-modern">
-                        <div class="stats-icon">
-                            <i class="fas fa-clock"></i>
-                        </div>
-                        <span class="stats-number"><?php echo $total_pending; ?></span>
-                        <span class="stats-label">Pending Review</span>
-                    </div>
-                    
-                    <div class="stats-card-modern">
-                        <div class="stats-icon">
-                            <i class="fas fa-check"></i>
-                        </div>
-                        <span class="stats-number"><?php echo $total_approved; ?></span>
-                        <span class="stats-label">Approved</span>
-                    </div>
-                    <?php endif; ?>
-                </div>
-                
-                <?php endif; ?>
-                
-                <!-- Recent Applications Table -->
-                <?php if (!empty($dashboard_data['recent_applications']) || !empty($dashboard_data['applications'])): ?>
-                <div class="recent-table">
-                    <div class="card-header-modern">
-                        <h5 class="mb-0">
-                            <i class="fas fa-clock me-2"></i>Recent Applications
-                        </h5>
-                    </div>
-                    <div class="table-responsive">
-                        <table class="table table-hover mb-0">
-                            <thead class="table-dark">
-                                <tr>
-                                    <th>Application #</th>
-                                    <th>Student Name</th>
-                                    <?php if ($current_user_role === ROLE_ADMIN): ?>
-                                    <th>Program</th>
-                                    <?php endif; ?>
-                                    <th>Status</th>
-                                    <th>Date</th>
-                                    <th>Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <?php 
-                                $apps = $dashboard_data['recent_applications'] ?? $dashboard_data['applications'] ?? [];
-                                foreach (array_slice($apps, 0, 5) as $app): 
-                                ?>
-                                <tr>
-                                    <td><code><?php echo htmlspecialchars($app['application_number']); ?></code></td>
-                                    <td><?php echo htmlspecialchars($app['student_name']); ?></td>
-                                    <?php if ($current_user_role === ROLE_ADMIN): ?>
-                                    <td><?php echo htmlspecialchars($app['program_code'] ?? 'N/A'); ?></td>
-                                    <?php endif; ?>
-                                    <td>
-                                        <span class="badge-modern badge-<?php echo getStatusColor($app['status']); ?>-modern">
-                                            <?php echo ucwords(str_replace('_', ' ', $app['status'])); ?>
-                                        </span>
-                                    </td>
-                                    <td><?php echo formatDate($app['date_created']); ?></td>
-                                    <td>
-                                        <a href="admin/applications/view.php?id=<?php echo $app['id']; ?>" 
-                                           class="btn-modern btn-sm-modern btn-primary-modern">
-                                            View
-                                        </a>
-                                    </td>
-                                </tr>
-                                <?php endforeach; ?>
-                            </tbody>
-                        </table>
                     </div>
                 </div>
-                <?php endif; ?>
-            </main>
+            </div>
         </div>
     </div>
     
@@ -812,45 +935,56 @@ function getStatusColor($status) {
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     
     <script>
-        // Sidebar toggle for mobile
-        document.getElementById('sidebarToggle')?.addEventListener('click', function() {
-            document.querySelector('.dashboard-sidebar').classList.toggle('show');
-        });
-        
-        // Close sidebar when clicking outside on mobile
-        document.addEventListener('click', function(e) {
-            if (window.innerWidth <= 768) {
-                const sidebar = document.querySelector('.dashboard-sidebar');
-                const toggle = document.getElementById('sidebarToggle');
-                
-                if (sidebar && !sidebar.contains(e.target) && !toggle?.contains(e.target)) {
-                    sidebar.classList.remove('show');
-                }
+        // Animate progress bar on load
+        document.addEventListener('DOMContentLoaded', function() {
+            const progressFill = document.querySelector('.progress-fill');
+            if (progressFill) {
+                const targetWidth = progressFill.style.width;
+                progressFill.style.width = '0%';
+                setTimeout(() => {
+                    progressFill.style.width = targetWidth;
+                }, 500);
             }
-        });
-        
-        // Auto-hide alerts
-        setTimeout(function() {
-            document.querySelectorAll('.alert').forEach(function(alert) {
-                alert.style.display = 'none';
+            
+            // Animate counters
+            const counters = document.querySelectorAll('.stat-number');
+            counters.forEach(counter => {
+                const target = parseInt(counter.textContent);
+                const increment = target / 30;
+                let current = 0;
+                
+                const updateCounter = () => {
+                    if (current < target) {
+                        current += increment;
+                        counter.textContent = Math.ceil(current);
+                        requestAnimationFrame(updateCounter);
+                    } else {
+                        counter.textContent = target;
+                    }
+                };
+                
+                setTimeout(updateCounter, Math.random() * 1000);
             });
-        }, 5000);
-        
-        // Add loading states to buttons
-        document.querySelectorAll('.btn-modern').forEach(function(btn) {
-            btn.addEventListener('click', function() {
-                if (!this.disabled && this.type === 'submit') {
-                    this.disabled = true;
-                    const originalText = this.innerHTML;
-                    this.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Loading...';
-                    
+            
+            // Add click animation to quick actions
+            document.querySelectorAll('.quick-action, .next-action-btn').forEach(element => {
+                element.addEventListener('click', function(e) {
+                    this.style.transform = 'scale(0.95)';
                     setTimeout(() => {
-                        this.disabled = false;
-                        this.innerHTML = originalText;
-                    }, 3000);
-                }
+                        this.style.transform = '';
+                    }, 150);
+                });
             });
         });
+        
+        // Auto-refresh recent activity (placeholder)
+        function refreshActivity() {
+            // This would fetch new activity data via AJAX
+            console.log('Refreshing activity data...');
+        }
+        
+        // Refresh every 5 minutes
+        setInterval(refreshActivity, 300000);
     </script>
 </body>
 </html>
