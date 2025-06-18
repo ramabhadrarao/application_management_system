@@ -14,7 +14,7 @@ if (session_status() == PHP_SESSION_NONE) {
 }
 
 // Site Configuration
-define('SITE_URL', 'http://localhost:99/application_management_system');
+define('SITE_URL', 'http://localhost:99/');
 define('SITE_NAME', 'SWARNANDHRA College');
 define('SITE_LOGO', 'assets/images/logo.png');
 define('ADMIN_EMAIL', 'admin@swarnandhra.edu');
