@@ -1,11 +1,12 @@
 <?php
 /**
- * Student Application Status Tracking
+ * Student Application Status Tracking (FIXED)
  * 
  * File: student/status.php
- * Purpose: Track application status with timeline and updates
+ * Purpose: Track application status with accurate document upload status
  * Author: Student Application Management System
  * Created: 2025
+ * FIXED: Now shows actual document upload status instead of hardcoded data
  */
 
 require_once '../config/config.php';
@@ -40,6 +41,69 @@ $status_history = $application->getStatusHistory($student_application['id']);
 
 // Get program details
 $user_program = $program->getById($student_application['program_id']);
+
+// FIXED: Get actual document status from database
+$document_status_query = "
+    SELECT 
+        ct.id as certificate_id,
+        ct.name as certificate_name,
+        ct.description,
+        pcr.is_required,
+        pcr.display_order,
+        ad.id as document_id,
+        ad.is_verified,
+        ad.verified_at,
+        ad.date_created as upload_date,
+        ad.verification_remarks,
+        fu.original_name,
+        fu.file_size
+    FROM program_certificate_requirements pcr
+    JOIN certificate_types ct ON pcr.certificate_type_id = ct.id
+    LEFT JOIN application_documents ad ON pcr.certificate_type_id = ad.certificate_type_id 
+                                        AND ad.application_id = :application_id
+    LEFT JOIN file_uploads fu ON ad.file_upload_id = fu.uuid
+    WHERE pcr.program_id = :program_id
+    AND ct.is_active = 1
+    ORDER BY pcr.display_order ASC, ct.name ASC
+";
+
+$stmt = $db->prepare($document_status_query);
+$stmt->bindParam(':application_id', $student_application['id']);
+$stmt->bindParam(':program_id', $student_application['program_id']);
+$stmt->execute();
+$document_requirements = $stmt->fetchAll();
+
+// Calculate actual document statistics
+$total_required = 0;
+$total_optional = 0;
+$uploaded_required = 0;
+$uploaded_optional = 0;
+$verified_required = 0;
+$verified_optional = 0;
+
+foreach ($document_requirements as $doc) {
+    if ($doc['is_required']) {
+        $total_required++;
+        if ($doc['document_id']) {
+            $uploaded_required++;
+            if ($doc['is_verified']) {
+                $verified_required++;
+            }
+        }
+    } else {
+        $total_optional++;
+        if ($doc['document_id']) {
+            $uploaded_optional++;
+            if ($doc['is_verified']) {
+                $verified_optional++;
+            }
+        }
+    }
+}
+
+$total_documents = $total_required + $total_optional;
+$total_uploaded = $uploaded_required + $uploaded_optional;
+$total_verified = $verified_required + $verified_optional;
 
 // Status configuration
 $status_config = [
@@ -724,19 +788,19 @@ $page_subtitle = 'Track your application progress';
                                 <i class="fas fa-file-check"></i>
                             </div>
                             <div class="status-card-title">Documents</div>
-                            <div class="status-card-value">5/8</div>
-                            <div class="status-card-label">Uploaded</div>
+                            <div class="status-card-value"><?php echo $total_uploaded; ?>/<?php echo $total_required; ?></div>
+                            <div class="status-card-label">Required Uploaded</div>
                         </div>
                     </div>
                     
                     <div class="col-lg-3 col-md-6">
                         <div class="status-card">
                             <div class="status-card-icon" style="background: var(--warning-color);">
-                                <i class="fas fa-clock"></i>
+                                <i class="fas fa-check-double"></i>
                             </div>
-                            <div class="status-card-title">Review Time</div>
-                            <div class="status-card-value">5-7</div>
-                            <div class="status-card-label">Working Days</div>
+                            <div class="status-card-title">Verified</div>
+                            <div class="status-card-value"><?php echo $total_verified; ?></div>
+                            <div class="status-card-label">Documents Verified</div>
                         </div>
                     </div>
                 </div>
@@ -751,50 +815,65 @@ $page_subtitle = 'Track your application progress';
                                 Document Status
                             </h4>
                             
-                            <?php 
-                            // Sample document status (in real implementation, get from database)
-                            $documents = [
-                                ['name' => '10th Marks Memo', 'status' => 'verified', 'note' => 'Verified on March 10, 2025'],
-                                ['name' => 'Intermediate Marks Memo', 'status' => 'verified', 'note' => 'Verified on March 10, 2025'],
-                                ['name' => 'Intermediate TC', 'status' => 'uploaded', 'note' => 'Uploaded on March 15, 2025'],
-                                ['name' => 'Study Certificate', 'status' => 'pending', 'note' => 'Under verification'],
-                                ['name' => 'Income Certificate', 'status' => 'uploaded', 'note' => 'Uploaded on March 16, 2025'],
-                                ['name' => 'Aadhar Card', 'status' => 'missing', 'note' => 'Please upload'],
-                                ['name' => 'Passport Photo', 'status' => 'missing', 'note' => 'Please upload'],
-                                ['name' => 'Signature', 'status' => 'missing', 'note' => 'Please upload']
-                            ];
-                            ?>
-                            
-                            <?php foreach ($documents as $doc): ?>
+                            <?php foreach ($document_requirements as $doc): ?>
                             <div class="document-item">
                                 <div class="document-icon" style="background: <?php
-                                    switch($doc['status']) {
-                                        case 'verified': echo 'var(--primary-color)';break;
-                                        case 'uploaded': echo 'var(--success-color)';break;
-                                        case 'pending': echo 'var(--warning-color)';break;
-                                        case 'missing': echo 'var(--danger-color)';break;
+                                    if ($doc['document_id']) {
+                                        echo $doc['is_verified'] ? 'var(--primary-color)' : 'var(--success-color)';
+                                    } else {
+                                        echo $doc['is_required'] ? 'var(--danger-color)' : 'var(--warning-color)';
                                     }
                                 ?>; color: white;">
                                     <i class="fas fa-<?php
-                                        switch($doc['status']) {
-                                            case 'verified': echo 'check-circle';break;
-                                            case 'uploaded': echo 'file-check';break;
-                                            case 'pending': echo 'clock';break;
-                                            case 'missing': echo 'exclamation-triangle';break;
+                                        if ($doc['document_id']) {
+                                            echo $doc['is_verified'] ? 'check-circle' : 'file-check';
+                                        } else {
+                                            echo $doc['is_required'] ? 'exclamation-triangle' : 'minus-circle';
                                         }
                                     ?>"></i>
                                 </div>
                                 
                                 <div class="document-info">
-                                    <div class="document-name"><?php echo $doc['name']; ?></div>
-                                    <div class="document-note"><?php echo $doc['note']; ?></div>
+                                    <div class="document-name"><?php echo htmlspecialchars($doc['certificate_name']); ?></div>
+                                    <div class="document-note">
+                                        <?php 
+                                        if ($doc['document_id']) {
+                                            if ($doc['is_verified']) {
+                                                echo 'Verified on ' . formatDate($doc['verified_at'] ?: $doc['upload_date']);
+                                            } else {
+                                                echo 'Uploaded on ' . formatDate($doc['upload_date']) . ' - Pending verification';
+                                            }
+                                        } else {
+                                            echo $doc['is_required'] ? 'Required - Please upload this document' : 'Optional - Not uploaded';
+                                        }
+                                        ?>
+                                    </div>
                                 </div>
                                 
-                                <div class="document-badge badge-<?php echo $doc['status']; ?>">
-                                    <?php echo ucfirst($doc['status']); ?>
+                                <div class="document-badge badge-<?php 
+                                    if ($doc['document_id']) {
+                                        echo $doc['is_verified'] ? 'verified' : 'uploaded';
+                                    } else {
+                                        echo 'missing';
+                                    }
+                                ?>">
+                                    <?php 
+                                    if ($doc['document_id']) {
+                                        echo $doc['is_verified'] ? 'Verified' : 'Uploaded';
+                                    } else {
+                                        echo 'Missing';
+                                    }
+                                    ?>
                                 </div>
                             </div>
                             <?php endforeach; ?>
+                            
+                            <?php if ($uploaded_required < $total_required): ?>
+                            <div class="alert alert-warning mt-3">
+                                <i class="fas fa-exclamation-triangle me-2"></i>
+                                You have <?php echo ($total_required - $uploaded_required); ?> required document(s) pending upload.
+                            </div>
+                            <?php endif; ?>
                         </div>
                     </div>
                     
@@ -834,10 +913,12 @@ $page_subtitle = 'Track your application progress';
                                     <i class="fas fa-upload"></i>
                                     Upload Documents
                                 </a>
+                                <?php if ($uploaded_required >= $total_required): ?>
                                 <a href="<?php echo SITE_URL; ?>/student/submit.php" class="btn-modern btn-success-modern">
                                     <i class="fas fa-lock"></i>
                                     Final Submit
                                 </a>
+                                <?php endif; ?>
                             </div>
                             
                             <?php elseif ($student_application['status'] === STATUS_UNDER_REVIEW): ?>
@@ -984,13 +1065,6 @@ $page_subtitle = 'Track your application progress';
                 notification.style.opacity = '0';
                 setTimeout(() => notification.remove(), 300);
             }, 5000);
-        }
-        
-        // Simulate real-time updates (placeholder)
-        if (Math.random() < 0.1) { // 10% chance to show notification
-            setTimeout(() => {
-                showStatusNotification('Your application status has been updated!', 'info');
-            }, 2000);
         }
     </script>
 </body>
