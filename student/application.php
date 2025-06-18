@@ -553,7 +553,8 @@ $page_title = 'My Application';
             width: 120px;
             height: 120px;
             border-radius: 50%;
-            background: conic-gradient(var(--primary-color) calc(var(--progress) * 1%), var(--border-color) 0);
+            /* Show remaining portion in border color */
+            background: conic-gradient(var(--primary-color) calc(var(--progress) * 1%), var(--border-color) calc(var(--progress) * 1%));
             display: flex;
             align-items: center;
             justify-content: center;
