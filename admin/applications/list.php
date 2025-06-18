@@ -1,6 +1,6 @@
 <?php
 /**
- * Applications Management - List View (FIXED VERSION)
+ * Applications Management - List View (UPDATED WITH SETTINGS AND PRINT)
  * 
  * File: admin/applications/list.php
  * Purpose: Manage all applications with advanced filtering and bulk operations
@@ -329,6 +329,16 @@ $page_title = 'Manage Applications';
             font-size: 0.7rem;
             border-radius: 4px;
         }
+        
+        /* Print modal styles */
+        .print-modal .modal-body {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        
+        .print-options .form-check {
+            margin-bottom: 0.5rem;
+        }
     </style>
 </head>
 <body>
@@ -346,9 +356,17 @@ $page_title = 'Manage Applications';
                     </div>
                     <div class="col-auto ms-auto">
                         <div class="btn-list">
+                            <button class="btn btn-light" onclick="showPrintModal()">
+                                <i class="fas fa-print me-2"></i>Print
+                            </button>
                             <a href="export.php?<?php echo http_build_query($filters); ?>" class="btn btn-light">
                                 <i class="fas fa-download me-2"></i>Export
                             </a>
+                            <?php if ($current_user_role === ROLE_ADMIN): ?>
+                            <a href="<?php echo SITE_URL; ?>/admin/applications/settings.php" class="btn btn-light">
+                                <i class="fas fa-cog me-2"></i>Settings
+                            </a>
+                            <?php endif; ?>
                             <div class="dropdown">
                                 <button class="btn btn-light dropdown-toggle" type="button" data-bs-toggle="dropdown">
                                     <i class="fas fa-filter me-2"></i>Quick Filters
@@ -609,16 +627,20 @@ $page_title = 'Manage Applications';
                                     </td>
                                     <td>
                                         <div class="btn-group" role="group">
-                                            <a href="view.php?id=<?php echo (int)$app['id']; ?>" 
+                                            <a href="<?php echo SITE_URL; ?>/admin/applications/view.php?id=<?php echo (int)$app['id']; ?>" 
                                                class="btn btn-outline-info btn-action" title="View Details">
                                                 <i class="fas fa-eye"></i>
                                             </a>
                                             <?php if (in_array($app['status'], ['draft', 'frozen'])): ?>
-                                            <a href="edit.php?id=<?php echo (int)$app['id']; ?>" 
+                                            <a href="<?php echo SITE_URL; ?>/admin/applications/edit.php?id=<?php echo (int)$app['id']; ?>" 
                                                class="btn btn-outline-primary btn-action" title="Edit">
                                                 <i class="fas fa-edit"></i>
                                             </a>
                                             <?php endif; ?>
+                                            <a href="<?php echo SITE_URL; ?>/admin/applications/print.php?id=<?php echo (int)$app['id']; ?>" 
+                                               class="btn btn-outline-secondary btn-action" title="Print" target="_blank">
+                                                <i class="fas fa-print"></i>
+                                            </a>
                                             <div class="dropdown">
                                                 <button class="btn btn-outline-secondary btn-action dropdown-toggle" 
                                                         type="button" data-bs-toggle="dropdown">
@@ -647,10 +669,10 @@ $page_title = 'Manage Applications';
                                                     <?php endif; ?>
                                                     
                                                     <li><hr class="dropdown-divider"></li>
-                                                    <li><a class="dropdown-item" href="communication.php?id=<?php echo (int)$app['id']; ?>">
+                                                    <li><a class="dropdown-item" href="<?php echo SITE_URL; ?>/admin/applications/communication.php?id=<?php echo (int)$app['id']; ?>">
                                                         <i class="fas fa-comments text-primary me-2"></i>Message Student
                                                     </a></li>
-                                                    <li><a class="dropdown-item" href="../documents/verify.php?app_id=<?php echo (int)$app['id']; ?>">
+                                                    <li><a class="dropdown-item" href="<?php echo SITE_URL; ?>/admin/documents/verify.php?app_id=<?php echo (int)$app['id']; ?>">
                                                         <i class="fas fa-file-check text-info me-2"></i>Verify Documents
                                                     </a></li>
                                                 </ul>
@@ -747,6 +769,109 @@ $page_title = 'Manage Applications';
         </div>
     </div>
     
+    <!-- Print Modal -->
+    <div class="modal fade print-modal" id="printModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Print Applications</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="printForm" target="_blank" action="print-list.php" method="GET">
+                        <!-- Pass current filters -->
+                        <input type="hidden" name="search" value="<?php echo htmlspecialchars($filters['search']); ?>">
+                        <input type="hidden" name="program_id" value="<?php echo htmlspecialchars($filters['program_id']); ?>">
+                        <input type="hidden" name="status" value="<?php echo htmlspecialchars($filters['status']); ?>">
+                        <input type="hidden" name="academic_year" value="<?php echo htmlspecialchars($filters['academic_year']); ?>">
+                        <input type="hidden" name="date_from" value="<?php echo htmlspecialchars($filters['date_from']); ?>">
+                        <input type="hidden" name="date_to" value="<?php echo htmlspecialchars($filters['date_to']); ?>">
+                        
+                        <h6 class="mb-3">Select Print Options:</h6>
+                        
+                        <div class="print-options">
+                            <div class="mb-3">
+                                <label class="form-label">Print Format</label>
+                                <select name="format" class="form-select">
+                                    <option value="summary">Summary List</option>
+                                    <option value="detailed">Detailed List</option>
+                                    <option value="selected" id="printSelectedOption" disabled>Selected Applications Only</option>
+                                </select>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label class="form-label">Include Columns</label>
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" name="columns[]" value="application_number" checked>
+                                            <label class="form-check-label">Application Number</label>
+                                        </div>
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" name="columns[]" value="student_name" checked>
+                                            <label class="form-check-label">Student Name</label>
+                                        </div>
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" name="columns[]" value="email" checked>
+                                            <label class="form-check-label">Email</label>
+                                        </div>
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" name="columns[]" value="mobile" checked>
+                                            <label class="form-check-label">Mobile Number</label>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" name="columns[]" value="program" checked>
+                                            <label class="form-check-label">Program</label>
+                                        </div>
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" name="columns[]" value="status" checked>
+                                            <label class="form-check-label">Status</label>
+                                        </div>
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" name="columns[]" value="submitted_date" checked>
+                                            <label class="form-check-label">Submitted Date</label>
+                                        </div>
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" name="columns[]" value="documents">
+                                            <label class="form-check-label">Document Status</label>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label class="form-label">Page Orientation</label>
+                                <div>
+                                    <div class="form-check form-check-inline">
+                                        <input class="form-check-input" type="radio" name="orientation" value="portrait" checked>
+                                        <label class="form-check-label">Portrait</label>
+                                    </div>
+                                    <div class="form-check form-check-inline">
+                                        <input class="form-check-input" type="radio" name="orientation" value="landscape">
+                                        <label class="form-check-label">Landscape</label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="alert alert-info">
+                            <i class="fas fa-info-circle me-2"></i>
+                            This will generate a printable report of applications based on your current filters.
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="submitPrintForm()">
+                        <i class="fas fa-print me-2"></i>Print
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
     <!-- Scripts -->
     <script src="https://cdn.jsdelivr.net/npm/@tabler/core@1.0.0-beta17/dist/js/tabler.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
@@ -770,10 +895,17 @@ $page_title = 'Manage Applications';
             const checkedBoxes = document.querySelectorAll('.app-checkbox:checked');
             const bulkActions = document.getElementById('bulkActions');
             const selectedCount = document.getElementById('selectedCount');
+            const printSelectedOption = document.getElementById('printSelectedOption');
             
             if (checkedBoxes.length > 0) {
                 bulkActions.style.display = 'block';
                 selectedCount.textContent = checkedBoxes.length;
+                
+                // Enable print selected option
+                if (printSelectedOption) {
+                    printSelectedOption.disabled = false;
+                    printSelectedOption.textContent = `Selected Applications (${checkedBoxes.length})`;
+                }
                 
                 // Add hidden inputs for selected applications
                 const form = document.getElementById('bulkForm');
@@ -789,6 +921,10 @@ $page_title = 'Manage Applications';
                 });
             } else {
                 bulkActions.style.display = 'none';
+                if (printSelectedOption) {
+                    printSelectedOption.disabled = true;
+                    printSelectedOption.textContent = 'Selected Applications Only';
+                }
             }
         }
         
@@ -822,6 +958,41 @@ $page_title = 'Manage Applications';
                 document.body.appendChild(form);
                 form.submit();
             }
+        }
+        
+        // Print functionality
+        function showPrintModal() {
+            const modal = new bootstrap.Modal(document.getElementById('printModal'));
+            modal.show();
+        }
+        
+        function submitPrintForm() {
+            const form = document.getElementById('printForm');
+            const formatSelect = form.querySelector('select[name="format"]');
+            
+            // If printing selected applications, add the IDs to the form
+            if (formatSelect.value === 'selected') {
+                const checkedBoxes = document.querySelectorAll('.app-checkbox:checked');
+                
+                // Remove existing selected inputs
+                form.querySelectorAll('input[name="selected[]"]').forEach(input => input.remove());
+                
+                // Add selected application IDs
+                checkedBoxes.forEach(checkbox => {
+                    const input = document.createElement('input');
+                    input.type = 'hidden';
+                    input.name = 'selected[]';
+                    input.value = checkbox.value;
+                    form.appendChild(input);
+                });
+            }
+            
+            form.submit();
+            
+            // Close modal after a delay
+            setTimeout(() => {
+                bootstrap.Modal.getInstance(document.getElementById('printModal')).hide();
+            }, 500);
         }
         
         // Auto-hide alerts
