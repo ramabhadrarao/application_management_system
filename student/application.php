@@ -1,11 +1,12 @@
 <?php
 /**
- * Student Application Form (Enhanced UI & UX)
+ * Student Application Form (Enhanced UI & UX) - FIXED VERSION
  * 
  * File: student/application.php
  * Purpose: Modern application form with step navigation and enhanced UI
  * Author: Student Application Management System
  * Created: 2025
+ * Updated: Added missing additional details section
  */
 
 require_once '../config/config.php';
@@ -35,8 +36,9 @@ $user_program = $program->getById($user_details['program_id']);
 // Get existing application or initialize new one
 $existing_application = $application->getByUserId($current_user_id);
 
-// Initialize form data
+// Initialize form data with ALL fields from database
 $form_data = [
+    // Personal Details
     'student_name' => '',
     'father_name' => '',
     'mother_name' => '',
@@ -47,6 +49,8 @@ $form_data = [
     'parent_mobile' => '',
     'guardian_mobile' => '',
     'email' => $user_details['email'],
+    
+    // Address Details
     'present_door_no' => '',
     'present_street' => '',
     'present_village' => '',
@@ -59,6 +63,8 @@ $form_data = [
     'permanent_mandal' => '',
     'permanent_district' => '',
     'permanent_pincode' => '',
+    
+    // Additional Details
     'religion' => '',
     'caste' => '',
     'reservation_category' => 'OC',
@@ -66,6 +72,8 @@ $form_data = [
     'sadaram_number' => '',
     'identification_mark_1' => '',
     'identification_mark_2' => '',
+    
+    // Special Categories
     'special_reservation' => '',
     'meeseva_caste_certificate' => '',
     'meeseva_income_certificate' => '',
@@ -91,6 +99,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 $form_data[$key] = sanitizeInput($_POST[$key]);
             }
         }
+        
+        // Handle checkbox for physically handicapped
+        $form_data['is_physically_handicapped'] = isset($_POST['is_physically_handicapped']) ? 1 : 0;
         
         // Validation
         $required_fields = [
@@ -169,9 +180,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
 // Calculate progress
 $completed_fields = 0;
-$total_fields = 8; // Basic required fields
+$total_fields = 12; // Updated to include all required fields
 
-$check_fields = ['student_name', 'father_name', 'mother_name', 'date_of_birth', 'gender', 'mobile_number', 'present_village', 'permanent_village'];
+$check_fields = ['student_name', 'father_name', 'mother_name', 'date_of_birth', 'gender', 'mobile_number', 'present_village', 'permanent_village', 'religion', 'caste', 'identification_mark_1', 'identification_mark_2'];
 foreach ($check_fields as $field) {
     if (!empty($form_data[$field])) {
         $completed_fields++;
@@ -695,6 +706,17 @@ $page_title = 'My Application';
             transform: translateY(0);
         }
         
+        /* Special form styles for additional details */
+        .form-check-inline {
+            margin-right: 1.5rem;
+        }
+        
+        .help-text {
+            font-size: 0.85rem;
+            color: var(--text-light);
+            margin-top: 0.25rem;
+        }
+        
         /* Responsive Design */
         @media (max-width: 768px) {
             .application-header {
@@ -1137,8 +1159,244 @@ $page_title = 'My Application';
                                         </div>
                                     </div>
                                     
-                                    <!-- Continue with Permanent Address and Additional Info sections... -->
-                                    <!-- [Similar styling for other sections] -->
+                                    <!-- Permanent Address -->
+                                    <div class="form-section">
+                                        <div class="section-title">
+                                            <i class="fas fa-home"></i>
+                                            Permanent Address
+                                        </div>
+                                        <div class="section-description">
+                                            Provide your permanent residential address.
+                                        </div>
+                                        
+                                        <div class="row g-3">
+                                            <div class="col-lg-3">
+                                                <div class="form-group-modern">
+                                                    <label class="form-label-modern">Door No.</label>
+                                                    <input type="text" 
+                                                           class="form-control-modern" 
+                                                           name="permanent_door_no" 
+                                                           value="<?php echo htmlspecialchars($form_data['permanent_door_no']); ?>"
+                                                           placeholder="House/Door number"
+                                                           <?php echo !$can_edit ? 'readonly' : ''; ?>>
+                                                </div>
+                                            </div>
+                                            
+                                            <div class="col-lg-9">
+                                                <div class="form-group-modern">
+                                                    <label class="form-label-modern">Street</label>
+                                                    <input type="text" 
+                                                           class="form-control-modern" 
+                                                           name="permanent_street" 
+                                                           value="<?php echo htmlspecialchars($form_data['permanent_street']); ?>"
+                                                           placeholder="Street name"
+                                                           <?php echo !$can_edit ? 'readonly' : ''; ?>>
+                                                </div>
+                                            </div>
+                                            
+                                            <div class="col-lg-4">
+                                                <div class="form-group-modern">
+                                                    <label class="form-label-modern">Village/Town</label>
+                                                    <input type="text" 
+                                                           class="form-control-modern" 
+                                                           name="permanent_village" 
+                                                           value="<?php echo htmlspecialchars($form_data['permanent_village']); ?>"
+                                                           placeholder="Village or town"
+                                                           <?php echo !$can_edit ? 'readonly' : ''; ?>>
+                                                </div>
+                                            </div>
+                                            
+                                            <div class="col-lg-4">
+                                                <div class="form-group-modern">
+                                                    <label class="form-label-modern">Mandal</label>
+                                                    <input type="text" 
+                                                           class="form-control-modern" 
+                                                           name="permanent_mandal" 
+                                                           value="<?php echo htmlspecialchars($form_data['permanent_mandal']); ?>"
+                                                           placeholder="Mandal name"
+                                                           <?php echo !$can_edit ? 'readonly' : ''; ?>>
+                                                </div>
+                                            </div>
+                                            
+                                            <div class="col-lg-4">
+                                                <div class="form-group-modern">
+                                                    <label class="form-label-modern">District</label>
+                                                    <input type="text" 
+                                                           class="form-control-modern" 
+                                                           name="permanent_district" 
+                                                           value="<?php echo htmlspecialchars($form_data['permanent_district']); ?>"
+                                                           placeholder="District name"
+                                                           <?php echo !$can_edit ? 'readonly' : ''; ?>>
+                                                </div>
+                                            </div>
+                                            
+                                            <div class="col-lg-4">
+                                                <div class="form-group-modern">
+                                                    <label class="form-label-modern">Pincode</label>
+                                                    <input type="text" 
+                                                           class="form-control-modern" 
+                                                           name="permanent_pincode" 
+                                                           value="<?php echo htmlspecialchars($form_data['permanent_pincode']); ?>"
+                                                           placeholder="6-digit pincode"
+                                                           maxlength="6"
+                                                           <?php echo !$can_edit ? 'readonly' : ''; ?>>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Additional Details (FIXED - Added missing section) -->
+                                    <div class="form-section">
+                                        <div class="section-title">
+                                            <i class="fas fa-info-circle"></i>
+                                            Additional Details
+                                        </div>
+                                        <div class="section-description">
+                                            Provide additional information about your background and special categories.
+                                        </div>
+                                        
+                                        <div class="row g-3">
+                                            <div class="col-lg-6">
+                                                <div class="form-group-modern">
+                                                    <label class="form-label-modern">Religion</label>
+                                                    <input type="text" 
+                                                           class="form-control-modern" 
+                                                           name="religion" 
+                                                           value="<?php echo htmlspecialchars($form_data['religion']); ?>"
+                                                           placeholder="Enter your religion"
+                                                           <?php echo !$can_edit ? 'readonly' : ''; ?>>
+                                                </div>
+                                            </div>
+                                            
+                                            <div class="col-lg-6">
+                                                <div class="form-group-modern">
+                                                    <label class="form-label-modern">Caste</label>
+                                                    <input type="text" 
+                                                           class="form-control-modern" 
+                                                           name="caste" 
+                                                           value="<?php echo htmlspecialchars($form_data['caste']); ?>"
+                                                           placeholder="Enter your caste"
+                                                           <?php echo !$can_edit ? 'readonly' : ''; ?>>
+                                                </div>
+                                            </div>
+                                            
+                                            <div class="col-lg-6">
+                                                <div class="form-group-modern">
+                                                    <label class="form-label-modern">Identification Mark 1</label>
+                                                    <input type="text" 
+                                                           class="form-control-modern" 
+                                                           name="identification_mark_1" 
+                                                           value="<?php echo htmlspecialchars($form_data['identification_mark_1']); ?>"
+                                                           placeholder="e.g., Mole on right cheek"
+                                                           <?php echo !$can_edit ? 'readonly' : ''; ?>>
+                                                </div>
+                                            </div>
+                                            
+                                            <div class="col-lg-6">
+                                                <div class="form-group-modern">
+                                                    <label class="form-label-modern">Identification Mark 2</label>
+                                                    <input type="text" 
+                                                           class="form-control-modern" 
+                                                           name="identification_mark_2" 
+                                                           value="<?php echo htmlspecialchars($form_data['identification_mark_2']); ?>"
+                                                           placeholder="e.g., Scar on left hand"
+                                                           <?php echo !$can_edit ? 'readonly' : ''; ?>>
+                                                </div>
+                                            </div>
+                                            
+                                            <div class="col-lg-12">
+                                                <div class="form-check">
+                                                    <input class="form-check-input" 
+                                                           type="checkbox" 
+                                                           name="is_physically_handicapped" 
+                                                           value="1" 
+                                                           id="physicallyHandicapped" 
+                                                           <?php echo $form_data['is_physically_handicapped'] ? 'checked' : ''; ?>
+                                                           <?php echo !$can_edit ? 'disabled' : ''; ?>>
+                                                    <label class="form-check-label" for="physicallyHandicapped">
+                                                        <strong>Are you physically handicapped?</strong>
+                                                    </label>
+                                                </div>
+                                                <div class="help-text">Check if you have any physical disabilities</div>
+                                            </div>
+                                            
+                                            <?php if ($form_data['is_physically_handicapped']): ?>
+                                            <div class="col-lg-6" id="sadaramField">
+                                                <div class="form-group-modern">
+                                                    <label class="form-label-modern">Sadaram Number</label>
+                                                    <input type="text" 
+                                                           class="form-control-modern" 
+                                                           name="sadaram_number" 
+                                                           value="<?php echo htmlspecialchars($form_data['sadaram_number']); ?>"
+                                                           placeholder="Enter Sadaram number if applicable"
+                                                           <?php echo !$can_edit ? 'readonly' : ''; ?>>
+                                                    <div class="help-text">Sadaram disability certificate number</div>
+                                                </div>
+                                            </div>
+                                            <?php endif; ?>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Special Categories -->
+                                    <div class="form-section">
+                                        <div class="section-title">
+                                            <i class="fas fa-certificate"></i>
+                                            Special Categories & Certificates
+                                        </div>
+                                        <div class="section-description">
+                                            Provide details of special reservations and certificate numbers if applicable.
+                                        </div>
+                                        
+                                        <div class="row g-3">
+                                            <div class="col-lg-12">
+                                                <div class="form-group-modern">
+                                                    <label class="form-label-modern">Special Reservation Category</label>
+                                                    <textarea class="form-control-modern" 
+                                                              name="special_reservation" 
+                                                              rows="3"
+                                                              placeholder="Enter any special reservation categories (e.g., Ex-serviceman, Sports quota, NCC, etc.)"
+                                                              <?php echo !$can_edit ? 'readonly' : ''; ?>><?php echo htmlspecialchars($form_data['special_reservation']); ?></textarea>
+                                                    <div class="help-text">Mention if you belong to any special category for admission</div>
+                                                </div>
+                                            </div>
+                                            
+                                            <div class="col-lg-6">
+                                                <div class="form-group-modern">
+                                                    <label class="form-label-modern">MeeSeva Caste Certificate Number</label>
+                                                    <input type="text" 
+                                                           class="form-control-modern" 
+                                                           name="meeseva_caste_certificate" 
+                                                           value="<?php echo htmlspecialchars($form_data['meeseva_caste_certificate']); ?>"
+                                                           placeholder="Enter MeeSeva certificate number"
+                                                           <?php echo !$can_edit ? 'readonly' : ''; ?>>
+                                                </div>
+                                            </div>
+                                            
+                                            <div class="col-lg-6">
+                                                <div class="form-group-modern">
+                                                    <label class="form-label-modern">MeeSeva Income Certificate Number</label>
+                                                    <input type="text" 
+                                                           class="form-control-modern" 
+                                                           name="meeseva_income_certificate" 
+                                                           value="<?php echo htmlspecialchars($form_data['meeseva_income_certificate']); ?>"
+                                                           placeholder="Enter MeeSeva certificate number"
+                                                           <?php echo !$can_edit ? 'readonly' : ''; ?>>
+                                                </div>
+                                            </div>
+                                            
+                                            <div class="col-lg-6">
+                                                <div class="form-group-modern">
+                                                    <label class="form-label-modern">Ration Card Number</label>
+                                                    <input type="text" 
+                                                           class="form-control-modern" 
+                                                           name="ration_card_number" 
+                                                           value="<?php echo htmlspecialchars($form_data['ration_card_number']); ?>"
+                                                           placeholder="Enter ration card number"
+                                                           <?php echo !$can_edit ? 'readonly' : ''; ?>>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
                                     
                                     <?php if ($can_edit): ?>
                                     <!-- Form Actions -->
@@ -1328,6 +1586,37 @@ $page_title = 'My Application';
                     document.querySelector('[name="permanent_mandal"]').value = document.querySelector('[name="present_mandal"]').value;
                     document.querySelector('[name="permanent_district"]').value = document.querySelector('[name="present_district"]').value;
                     document.querySelector('[name="permanent_pincode"]').value = document.querySelector('[name="present_pincode"]').value;
+                }
+            });
+            
+            // Show/hide Sadaram number field based on physically handicapped checkbox
+            document.getElementById('physicallyHandicapped')?.addEventListener('change', function() {
+                const sadaramField = document.getElementById('sadaramField');
+                if (this.checked) {
+                    if (!sadaramField) {
+                        // Create Sadaram field dynamically
+                        const newField = document.createElement('div');
+                        newField.className = 'col-lg-6';
+                        newField.id = 'sadaramField';
+                        newField.innerHTML = `
+                            <div class="form-group-modern">
+                                <label class="form-label-modern">Sadaram Number</label>
+                                <input type="text" 
+                                       class="form-control-modern" 
+                                       name="sadaram_number" 
+                                       value=""
+                                       placeholder="Enter Sadaram number if applicable">
+                                <div class="help-text">Sadaram disability certificate number</div>
+                            </div>
+                        `;
+                        this.closest('.row').appendChild(newField);
+                    } else {
+                        sadaramField.style.display = 'block';
+                    }
+                } else {
+                    if (sadaramField) {
+                        sadaramField.style.display = 'none';
+                    }
                 }
             });
             

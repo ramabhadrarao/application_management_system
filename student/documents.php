@@ -6,6 +6,7 @@
  * Purpose: Upload and manage required documents with working backend
  * Author: Student Application Management System
  * Created: 2025
+ * FIXED: Now shows only program-specific document requirements
  */
 
 require_once '../config/config.php';
@@ -59,27 +60,35 @@ if (!is_dir($user_upload_dir)) {
     mkdir($user_upload_dir, 0755, true);
 }
 
-// Get program requirements with upload status
+// FIXED: Get program-specific requirements with upload status
 $requirements_query = "
     SELECT 
+        pcr.id as requirement_id,
         pcr.certificate_type_id,
         ct.name as certificate_name,
         ct.description,
+        ct.file_types_allowed,
+        ct.max_file_size_mb,
         pcr.is_required,
+        pcr.special_instructions,
         pcr.display_order,
         ad.id as document_id,
         ad.document_name as uploaded_filename,
         ad.is_verified,
         ad.date_created as upload_date,
+        ad.verification_remarks,
         fu.original_name,
         fu.file_size,
-        fu.uuid as file_uuid
+        fu.uuid as file_uuid,
+        fu.mime_type,
+        fu.upload_date as file_upload_date
     FROM program_certificate_requirements pcr
     JOIN certificate_types ct ON pcr.certificate_type_id = ct.id
     LEFT JOIN application_documents ad ON pcr.certificate_type_id = ad.certificate_type_id 
                                         AND ad.application_id = :application_id
     LEFT JOIN file_uploads fu ON ad.file_upload_id = fu.uuid
     WHERE pcr.program_id = :program_id
+    AND ct.is_active = 1
     ORDER BY pcr.display_order ASC, ct.name ASC
 ";
 
@@ -89,8 +98,31 @@ $stmt->bindParam(':program_id', $student_application['program_id']);
 $stmt->execute();
 $requirements = $stmt->fetchAll();
 
+// Get program details
+$user_program = $program->getById($student_application['program_id']);
+
+// Count statistics
+$total_required = 0;
+$total_uploaded = 0;
+$total_verified = 0;
+$total_optional = 0;
+
+foreach ($requirements as $req) {
+    if ($req['is_required']) {
+        $total_required++;
+        if ($req['document_id']) {
+            $total_uploaded++;
+            if ($req['is_verified']) {
+                $total_verified++;
+            }
+        }
+    } else {
+        $total_optional++;
+    }
+}
+
 $page_title = 'Document Upload';
-$page_subtitle = 'Upload required documents for your application';
+$page_subtitle = 'Upload required documents for ' . htmlspecialchars($user_program['program_name']);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -157,6 +189,47 @@ $page_subtitle = 'Upload required documents for your application';
             z-index: 2;
         }
         
+        /* Stats Section */
+        .stats-section {
+            background: var(--white);
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow-md);
+            padding: 2rem;
+            margin: -3rem auto 2rem;
+            position: relative;
+            z-index: 3;
+        }
+        
+        .stat-item {
+            text-align: center;
+            padding: 1rem;
+        }
+        
+        .stat-number {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+        }
+        
+        .stat-label {
+            color: var(--text-light);
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        /* Program Badge */
+        .program-badge {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 50px;
+            padding: 0.5rem 1.5rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.9rem;
+            margin-bottom: 1rem;
+        }
+        
         /* Document Cards */
         .document-card {
             background: var(--white);
@@ -203,6 +276,16 @@ $page_subtitle = 'Upload required documents for your application';
             color: var(--text-light);
             margin-bottom: 0.75rem;
             font-size: 0.95rem;
+        }
+        
+        .special-instructions {
+            background: rgba(23, 162, 184, 0.1);
+            border-left: 3px solid var(--info-color);
+            padding: 0.75rem;
+            margin-top: 0.75rem;
+            border-radius: 0 var(--radius-md) var(--radius-md) 0;
+            font-size: 0.85rem;
+            color: var(--info-color);
         }
         
         .document-badge {
@@ -483,67 +566,79 @@ $page_subtitle = 'Upload required documents for your application';
             to { opacity: 1; transform: translateY(0); }
         }
         
-        /* Debug panel */
-        .debug-panel {
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            background: var(--white);
-            border: 1px solid var(--border-color);
+        /* Verification status */
+        .verification-status {
+            background: rgba(0, 84, 166, 0.05);
             border-radius: var(--radius-md);
             padding: 1rem;
-            font-size: 0.8rem;
-            max-width: 300px;
-            z-index: 1000;
-            display: none;
+            margin-top: 1rem;
         }
         
-        .debug-toggle {
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            background: var(--danger-color);
-            color: white;
-            border: none;
+        .verification-icon {
+            width: 30px;
+            height: 30px;
             border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            cursor: pointer;
-            z-index: 1001;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 0.5rem;
+        }
+        
+        .verification-icon.verified {
+            background: var(--success-color);
+            color: white;
+        }
+        
+        .verification-icon.pending {
+            background: var(--warning-color);
+            color: white;
+        }
+        
+        /* Empty state */
+        .empty-state {
+            text-align: center;
+            padding: 3rem;
+            color: var(--text-light);
+        }
+        
+        .empty-icon {
+            font-size: 4rem;
+            margin-bottom: 1rem;
+            opacity: 0.5;
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            .stats-section {
+                margin-top: -2rem;
+            }
+            
+            .stat-number {
+                font-size: 2rem;
+            }
         }
     </style>
 </head>
 <body>
-    <!-- Debug Toggle (only visible in development) -->
-    <?php if (defined('DEBUG') && DEBUG): ?>
-    <button class="debug-toggle" onclick="toggleDebug()" title="Toggle Debug Info">
-        <i class="fas fa-bug"></i>
-    </button>
-    <div class="debug-panel" id="debugPanel">
-        <h6>Upload Debug Info</h6>
-        <ul class="list-unstyled mb-0">
-            <li>Base Dir: <?php echo $debug_info['upload_base_exists'] ? '✓' : '✗'; ?> <?php echo $debug_info['upload_base_writable'] ? 'W' : 'R'; ?></li>
-            <li>Docs Dir: <?php echo $debug_info['upload_documents_exists'] ? '✓' : '✗'; ?> <?php echo $debug_info['upload_documents_writable'] ? 'W' : 'R'; ?></li>
-            <li>User Dir: <?php echo $debug_info['user_upload_exists'] ? '✓' : '✗'; ?> <?php echo $debug_info['user_upload_writable'] ? 'W' : 'R'; ?></li>
-            <li>Max Size: <?php echo ini_get('upload_max_filesize'); ?></li>
-            <li>Post Size: <?php echo ini_get('post_max_size'); ?></li>
-        </ul>
-    </div>
-    <?php endif; ?>
-
     <div class="page-wrapper">
         <!-- Header -->
         <div class="page-header-modern">
             <div class="container-xl">
                 <div class="header-content">
                     <!-- Breadcrumb -->
-                    <nav class="mb-3" style="background: rgba(255, 255, 255, 0.1); border-radius: var(--radius-md); padding: 0.75rem 1rem;">
+                    <nav class="breadcrumb-modern mb-3" style="background: rgba(255, 255, 255, 0.1); border-radius: var(--radius-md); padding: 0.75rem 1rem;">
                         <a href="<?php echo SITE_URL; ?>/dashboard.php" style="color: rgba(255, 255, 255, 0.8); text-decoration: none;">
                             <i class="fas fa-home me-2"></i>Dashboard
                         </a>
                         <span class="mx-2">/</span>
                         <span>Documents</span>
                     </nav>
+                    
+                    <!-- Program Badge -->
+                    <div class="program-badge">
+                        <i class="fas fa-graduation-cap"></i>
+                        <?php echo htmlspecialchars($user_program['program_name']); ?>
+                    </div>
                     
                     <div class="row align-items-center">
                         <div class="col">
@@ -564,6 +659,36 @@ $page_subtitle = 'Upload required documents for your application';
         <!-- Main Content -->
         <div class="page-body">
             <div class="container-xl">
+                <!-- Statistics Section -->
+                <div class="stats-section">
+                    <div class="row">
+                        <div class="col-md-3 col-6">
+                            <div class="stat-item">
+                                <div class="stat-number text-primary"><?php echo $total_required; ?></div>
+                                <div class="stat-label">Required Documents</div>
+                            </div>
+                        </div>
+                        <div class="col-md-3 col-6">
+                            <div class="stat-item">
+                                <div class="stat-number text-success"><?php echo $total_uploaded; ?></div>
+                                <div class="stat-label">Uploaded</div>
+                            </div>
+                        </div>
+                        <div class="col-md-3 col-6">
+                            <div class="stat-item">
+                                <div class="stat-number text-info"><?php echo $total_verified; ?></div>
+                                <div class="stat-label">Verified</div>
+                            </div>
+                        </div>
+                        <div class="col-md-3 col-6">
+                            <div class="stat-item">
+                                <div class="stat-number text-secondary"><?php echo $total_optional; ?></div>
+                                <div class="stat-label">Optional</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
                 <!-- Global Alert Container -->
                 <div id="alertContainer"></div>
                 
@@ -577,14 +702,15 @@ $page_subtitle = 'Upload required documents for your application';
                     <div class="card-header">
                         <h3 class="card-title">
                             <i class="fas fa-list-check text-primary me-2"></i>
-                            Document Requirements
+                            Document Requirements for <?php echo htmlspecialchars($user_program['program_name']); ?>
                         </h3>
                     </div>
                     <div class="card-body">
                         <div class="row">
                             <div class="col-md-8">
                                 <p class="text-muted mb-3">
-                                    Please upload all required documents for your application. Ensure that all documents are clear, legible, and in the correct format.
+                                    Please upload all required documents for your <strong><?php echo htmlspecialchars($user_program['program_name']); ?></strong> application. 
+                                    Ensure that all documents are clear, legible, and in the correct format.
                                 </p>
                             </div>
                             
@@ -612,6 +738,19 @@ $page_subtitle = 'Upload required documents for your application';
                 </div>
                 
                 <!-- Document Upload Cards -->
+                <?php if (empty($requirements)): ?>
+                <div class="empty-state">
+                    <div class="empty-icon">
+                        <i class="fas fa-folder-open"></i>
+                    </div>
+                    <h4>No Document Requirements Found</h4>
+                    <p>No documents are required for your program at this time.</p>
+                    <a href="<?php echo SITE_URL; ?>/dashboard.php" class="btn btn-primary">
+                        <i class="fas fa-arrow-left me-2"></i>Back to Dashboard
+                    </a>
+                </div>
+                <?php else: ?>
+                
                 <div class="row">
                     <?php foreach ($requirements as $req): ?>
                     <div class="col-lg-6 col-xl-4">
@@ -630,6 +769,13 @@ $page_subtitle = 'Upload required documents for your application';
                                 <?php if ($req['description']): ?>
                                 <div class="document-description">
                                     <?php echo htmlspecialchars($req['description']); ?>
+                                </div>
+                                <?php endif; ?>
+                                
+                                <?php if ($req['special_instructions']): ?>
+                                <div class="special-instructions">
+                                    <i class="fas fa-info-circle me-1"></i>
+                                    <?php echo htmlspecialchars($req['special_instructions']); ?>
                                 </div>
                                 <?php endif; ?>
                                 
@@ -688,6 +834,26 @@ $page_subtitle = 'Upload required documents for your application';
                                         </button>
                                     </div>
                                 </div>
+                                
+                                <?php if ($req['is_verified']): ?>
+                                <div class="verification-status">
+                                    <div class="d-flex align-items-center">
+                                        <div class="verification-icon verified">
+                                            <i class="fas fa-check"></i>
+                                        </div>
+                                        <div>
+                                            <strong>Document Verified</strong><br>
+                                            <small class="text-muted">Verified on <?php echo formatDateTime($req['verified_at'] ?: $req['date_updated']); ?></small>
+                                        </div>
+                                    </div>
+                                    <?php if ($req['verification_remarks']): ?>
+                                    <div class="mt-2 p-2 bg-light rounded">
+                                        <small><strong>Remarks:</strong> <?php echo htmlspecialchars($req['verification_remarks']); ?></small>
+                                    </div>
+                                    <?php endif; ?>
+                                </div>
+                                <?php endif; ?>
+                                
                                 <?php else: ?>
                                 <!-- Upload form -->
                                 <div class="upload-form">
@@ -701,7 +867,11 @@ $page_subtitle = 'Upload required documents for your application';
                                             <i class="fas fa-cloud-upload-alt upload-icon"></i>
                                             <div class="upload-text">Click to upload or drag & drop</div>
                                             <div class="upload-subtext">
-                                                PDF, JPG, PNG up to <?php echo (MAX_FILE_SIZE / 1024 / 1024); ?>MB
+                                                <?php 
+                                                $allowed = $req['file_types_allowed'] ?: 'pdf,jpg,jpeg,png';
+                                                $max_size = $req['max_file_size_mb'] ?: (MAX_FILE_SIZE / 1024 / 1024);
+                                                echo strtoupper(str_replace(',', ', ', $allowed)) . ' up to ' . $max_size . 'MB';
+                                                ?>
                                             </div>
                                         </div>
                                     </div>
@@ -719,6 +889,7 @@ $page_subtitle = 'Upload required documents for your application';
                     </div>
                     <?php endforeach; ?>
                 </div>
+                <?php endif; ?>
                 
                 <!-- Action Buttons -->
                 <div class="row mt-4">
@@ -997,7 +1168,7 @@ $page_subtitle = 'Upload required documents for your application';
         
         // Test upload configuration on page load
         console.log('Upload configuration:', uploadConfig);
-        console.log('Available certificates:', <?php echo json_encode(array_column($requirements, 'certificate_type_id')); ?>);
+        console.log('Program-specific certificates loaded:', <?php echo count($requirements); ?>);
     </script>
 </body>
 </html>
